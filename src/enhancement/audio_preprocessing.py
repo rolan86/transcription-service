@@ -15,10 +15,20 @@ try:
     import soundfile as sf
     import numpy as np
     from scipy import signal
-    import noisereduce as nr
     PREPROCESSING_AVAILABLE = True
+    
+    # Noisereduce is optional
+    try:
+        import noisereduce as nr
+        NOISEREDUCE_AVAILABLE = True
+    except ImportError:
+        NOISEREDUCE_AVAILABLE = False
+        nr = None
+        
 except ImportError:
     PREPROCESSING_AVAILABLE = False
+    NOISEREDUCE_AVAILABLE = False
+    nr = None
 
 console = Console()
 
@@ -31,7 +41,9 @@ class AudioPreprocessor:
         
         if not self.available:
             self.logger.warning("Audio preprocessing dependencies not available. "
-                              "Install with: pip install librosa soundfile scipy noisereduce")
+                              "Install with: pip install librosa soundfile scipy")
+        elif not NOISEREDUCE_AVAILABLE:
+            self.logger.info("Noise reduction not available. Install with: pip install noisereduce")
     
     def preprocess_audio(self, 
                         audio_path: str,
@@ -107,9 +119,12 @@ class AudioPreprocessor:
             
             # 4. Noise reduction
             if noise_reduction:
-                self.logger.info("Applying noise reduction")
-                audio = self._apply_noise_reduction(audio, sr)
-                preprocessing_applied.append('noise_reduction')
+                if NOISEREDUCE_AVAILABLE:
+                    self.logger.info("Applying noise reduction")
+                    audio = self._apply_noise_reduction(audio, sr)
+                    preprocessing_applied.append('noise_reduction')
+                else:
+                    self.logger.warning("Noise reduction requested but noisereduce not available")
             
             # 5. Speech enhancement
             if enhance_speech:
@@ -171,6 +186,10 @@ class AudioPreprocessor:
     
     def _apply_noise_reduction(self, audio: np.ndarray, sr: int) -> np.ndarray:
         """Apply spectral noise reduction."""
+        if not NOISEREDUCE_AVAILABLE:
+            self.logger.warning("Noise reduction not available, skipping")
+            return audio
+            
         try:
             # Use noisereduce library for spectral noise reduction
             return nr.reduce_noise(y=audio, sr=sr, stationary=False, prop_decrease=0.8)

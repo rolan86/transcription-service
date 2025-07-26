@@ -1,0 +1,11 @@
+# Transcription
+# File: test_audio.wav
+# Generated: 2025-07-26T20:50:27.274376
+# Model: base
+# Language: en
+# Processing time: 1.14s
+# Confidence: 0.0%
+
+==================================================
+
+No speech detected in audio.
