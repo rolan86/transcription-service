@@ -21,6 +21,7 @@ from poc.chunked_processor import ChunkedProcessor
 from config.settings import Settings
 from output.writers import OutputWriterFactory
 from utils.logger import ProgressLogger
+from enhancement.speaker_detection import SpeakerDetector, is_speaker_detection_available
 
 
 class TranscriptionService:
@@ -43,6 +44,7 @@ class TranscriptionService:
         self.audio_processor = AudioProcessor()
         self.transcription_engine = None  # Lazy initialization
         self.chunked_processor = None  # Lazy initialization
+        self.speaker_detector = None  # Lazy initialization
         
         # Initialize output writer factory
         self.output_writer_factory = OutputWriterFactory(settings)
@@ -97,6 +99,10 @@ class TranscriptionService:
             
             if not result['success']:
                 return result
+            
+            # Step 2.5: Speaker Detection (if enabled)
+            if self.settings.get('enhancement', 'enable_speaker_detection', False):
+                result = self._process_speaker_detection(input_file, result, file_info['format_type'])
             
             # Step 3: Generate output file path if not provided
             if not output_file:
@@ -277,6 +283,86 @@ class TranscriptionService:
         """Generate output filename based on input file."""
         input_path = Path(input_file)
         return str(input_path.with_suffix(f'.{output_format}'))
+    
+    def _process_speaker_detection(self, input_file: str, transcription_result: Dict[str, Any], 
+                                  file_type: str) -> Dict[str, Any]:
+        """
+        Process speaker detection and merge with transcription results.
+        
+        Args:
+            input_file: Path to input file
+            transcription_result: Results from transcription
+            file_type: Type of file (audio or video)
+            
+        Returns:
+            Enhanced transcription result with speaker information
+        """
+        try:
+            if not is_speaker_detection_available():
+                self.progress_logger.info("⚠️  Speaker detection not available (pyannote.audio not installed)")
+                transcription_result['speaker_detection_error'] = "pyannote.audio not installed"
+                return transcription_result
+            
+            # Initialize speaker detector if needed
+            if self.speaker_detector is None:
+                enable_hf_token = self.settings.get('enhancement', 'use_huggingface_token', False)
+                self.speaker_detector = SpeakerDetector(enable_huggingface_token=enable_hf_token)
+            
+            self.progress_logger.info("🎭 Performing speaker detection...")
+            
+            # Get audio file path
+            audio_path = input_file
+            if file_type == 'video':
+                # Use the processed audio path from audio processor
+                success, message, audio_path = self.audio_processor.process_file(input_file, file_type)
+                if not success:
+                    transcription_result['speaker_detection_error'] = f"Audio extraction failed: {message}"
+                    return transcription_result
+            
+            # Perform speaker detection
+            num_speakers = self.settings.get('enhancement', 'expected_speakers')
+            speaker_result = self.speaker_detector.detect_speakers(audio_path, num_speakers)
+            
+            if not speaker_result['success']:
+                self.progress_logger.info(f"⚠️  Speaker detection failed: {speaker_result['error']}")
+                transcription_result['speaker_detection_error'] = speaker_result['error']
+                return transcription_result
+            
+            # Merge speaker info with transcription segments
+            transcription_segments = transcription_result.get('segments', [])
+            if transcription_segments:
+                merged_segments = self.speaker_detector.merge_with_transcription(
+                    transcription_segments, 
+                    speaker_result['speaker_segments']
+                )
+                transcription_result['segments'] = merged_segments
+            
+            # Add speaker detection results
+            transcription_result.update({
+                'speaker_detection': {
+                    'enabled': True,
+                    'speaker_count': speaker_result['speaker_count'],
+                    'speakers': speaker_result['speakers'],
+                    'speaker_stats': speaker_result['speaker_stats'],
+                    'speaker_segments': speaker_result['speaker_segments']
+                }
+            })
+            
+            # Update formatted text with speaker labels if requested
+            if self.settings.get('enhancement', 'include_speaker_labels', True):
+                speaker_formatted_text = self.speaker_detector.format_speaker_output(
+                    merged_segments if transcription_segments else [],
+                    include_confidence=self.settings.get('enhancement', 'include_speaker_confidence', False)
+                )
+                transcription_result['speaker_formatted_text'] = speaker_formatted_text
+            
+            self.progress_logger.info(f"✅ Speaker detection completed: {speaker_result['speaker_count']} speakers found")
+            return transcription_result
+            
+        except Exception as e:
+            self.progress_logger.info(f"⚠️  Speaker detection error: {str(e)}")
+            transcription_result['speaker_detection_error'] = str(e)
+            return transcription_result
     
     def _find_supported_files(self, directory: str, recursive: bool = False) -> List[str]:
         """Find all supported audio/video files in directory."""

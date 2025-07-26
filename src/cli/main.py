@@ -75,8 +75,19 @@ def cli(ctx):
               help='Suppress progress output')
 @click.option('--config', type=click.Path(exists=True),
               help='Path to configuration file')
+@click.option('--speakers/--no-speakers', default=False,
+              help='Enable speaker detection and diarization')
+@click.option('--num-speakers', type=int,
+              help='Expected number of speakers (optional hint)')
+@click.option('--speaker-labels/--no-speaker-labels', default=True,
+              help='Include speaker labels in output (default: enabled when --speakers used)')
+@click.option('--speaker-confidence/--no-speaker-confidence', default=False,
+              help='Include speaker confidence scores in output')
+@click.option('--use-hf-token/--no-hf-token', default=False,
+              help='Use HuggingFace token for better speaker detection models')
 def transcribe(input_file, output, output_format, model, language, timestamps, 
-               chunk_duration, force_chunking, verbose, quiet, config):
+               chunk_duration, force_chunking, verbose, quiet, config, 
+               speakers, num_speakers, speaker_labels, speaker_confidence, use_hf_token):
     """
     Transcribe an audio or video file to text.
     
@@ -116,7 +127,12 @@ def transcribe(input_file, output, output_format, model, language, timestamps,
             'force_chunking': force_chunking,
             'output_format': output_format,
             'verbose': verbose,
-            'quiet': quiet
+            'quiet': quiet,
+            'enable_speaker_detection': speakers,
+            'expected_speakers': num_speakers,
+            'include_speaker_labels': speaker_labels if speakers else False,
+            'include_speaker_confidence': speaker_confidence,
+            'use_huggingface_token': use_hf_token
         })
         
         # Show processing info

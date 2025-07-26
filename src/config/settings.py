@@ -46,6 +46,16 @@ class Settings:
             'download_root': None,  # Use Whisper's default if None
             'download_timeout': 300,  # 5 minutes
             'no_progress': False
+        },
+        'enhancement': {
+            'enable_speaker_detection': False,
+            'expected_speakers': None,  # Auto-detect if None
+            'include_speaker_labels': True,
+            'include_speaker_confidence': False,
+            'use_huggingface_token': False,
+            'enable_audio_preprocessing': False,
+            'enable_performance_optimizations': False,
+            'enhanced_metadata': False
         }
     }
     
@@ -168,7 +178,12 @@ class Settings:
             'output_format': ('output', 'default_format'),
             'timestamps': ('output', 'include_timestamps'),
             'verbose': ('processing', 'verbose_progress'),
-            'quiet': ('processing', 'quiet_mode')
+            'quiet': ('processing', 'quiet_mode'),
+            'enable_speaker_detection': ('enhancement', 'enable_speaker_detection'),
+            'expected_speakers': ('enhancement', 'expected_speakers'),
+            'include_speaker_labels': ('enhancement', 'include_speaker_labels'),
+            'include_speaker_confidence': ('enhancement', 'include_speaker_confidence'),
+            'use_huggingface_token': ('enhancement', 'use_huggingface_token')
         }
         
         for arg_name, (section, key) in arg_mapping.items():

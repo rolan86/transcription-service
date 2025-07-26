@@ -13,6 +13,11 @@ torch>=2.0.0
 librosa>=0.10.0
 soundfile>=0.12.1
 
+# Speaker Detection/Diarization (Phase 3A)
+pyannote.audio>=3.1.0
+pyannote.pipeline>=3.0.1
+pytorch-lightning>=2.0.0
+
 # CLI Framework
 click>=8.1.0
 rich>=13.0.0  # Beautiful terminal output

@@ -80,15 +80,37 @@ class TextWriter(BaseWriter):
                     f.write("\n" + "="*50 + "\n\n")
                 
                 # Write transcript text
-                text = transcription_result.get('text', '').strip()
-                if text:
-                    # Format with timestamps if requested
-                    if self.settings.get('output', 'include_timestamps', False):
-                        text = self._format_text_with_timestamps(transcription_result)
-                    
+                # Check if speaker-formatted text is available
+                if 'speaker_formatted_text' in transcription_result and transcription_result['speaker_formatted_text']:
+                    text = transcription_result['speaker_formatted_text']
                     f.write(text)
                 else:
-                    f.write("No speech detected in audio.")
+                    text = transcription_result.get('text', '').strip()
+                    if text:
+                        # Format with timestamps if requested
+                        if self.settings.get('output', 'include_timestamps', False):
+                            text = self._format_text_with_timestamps(transcription_result)
+                        
+                        f.write(text)
+                    else:
+                        f.write("No speech detected in audio.")
+                
+                # Add speaker summary if speaker detection was used
+                if transcription_result.get('speaker_detection', {}).get('enabled'):
+                    speaker_stats = transcription_result['speaker_detection'].get('speaker_stats', {})
+                    if speaker_stats:
+                        f.write("\n\n" + "="*50 + "\n")
+                        f.write("SPEAKER SUMMARY\n")
+                        f.write("="*50 + "\n")
+                        sorted_speakers = sorted(
+                            speaker_stats.items(),
+                            key=lambda x: x[1]['total_duration'],
+                            reverse=True
+                        )
+                        for i, (speaker, stats) in enumerate(sorted_speakers, 1):
+                            duration = stats['total_duration']
+                            segments = stats['segment_count']
+                            f.write(f"{i}. {speaker}: {duration:.1f}s ({segments} segments)\n")
                 
                 f.write("\n")
                 
@@ -154,6 +176,21 @@ class JSONWriter(BaseWriter):
                     'failed': transcription_result.get('failed_chunks', 0)
                 }
             
+            # Add speaker detection information if available
+            if 'speaker_detection' in transcription_result:
+                speaker_data = transcription_result['speaker_detection']
+                output_data['speaker_detection'] = {
+                    'enabled': speaker_data.get('enabled', False),
+                    'speaker_count': speaker_data.get('speaker_count', 0),
+                    'speakers': speaker_data.get('speakers', []),
+                    'speaker_stats': speaker_data.get('speaker_stats', {}),
+                    'speaker_segments': speaker_data.get('speaker_segments', [])
+                }
+                
+                # Add speaker-formatted text if available
+                if 'speaker_formatted_text' in transcription_result:
+                    output_data['speaker_formatted_text'] = transcription_result['speaker_formatted_text']
+            
             # Write JSON file
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(output_data, f, indent=2, ensure_ascii=False)
@@ -172,6 +209,12 @@ class JSONWriter(BaseWriter):
                 'text': segment.get('text', '').strip(),
                 'confidence': segment.get('avg_logprob', 0)
             }
+            
+            # Add speaker information if available
+            if 'speaker' in segment:
+                formatted_segment['speaker'] = segment['speaker']
+                if 'speaker_confidence' in segment:
+                    formatted_segment['speaker_confidence'] = segment['speaker_confidence']
             
             # Add word-level information if available
             if 'words' in segment:
