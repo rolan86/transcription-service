@@ -1,0 +1,33 @@
+# MVP Requirements for Transcription Service
+
+# Audio/Video Processing
+openai-whisper>=20231117
+pydub>=0.25.1
+ffmpeg-python>=0.2.0
+
+# Core Dependencies  
+numpy>=1.24.0
+torch>=2.0.0
+
+# Audio Processing Enhancement
+librosa>=0.10.0
+soundfile>=0.12.1
+
+# CLI Framework
+click>=8.1.0
+rich>=13.0.0  # Beautiful terminal output
+tqdm>=4.65.0  # Progress bars
+
+# Configuration Management
+pyyaml>=6.0.0
+python-dotenv>=1.0.0
+
+# Logging and Monitoring
+colorlog>=6.7.0
+
+# System Monitoring
+psutil>=5.9.0
+
+# Development/Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0

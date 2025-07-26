@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+"""
+Entry point script for the transcription service CLI.
+This script can be installed system-wide or used directly.
+"""
+
+import sys
+from pathlib import Path
+
+# Add src directory to Python path
+src_path = Path(__file__).parent / 'src'
+sys.path.insert(0, str(src_path))
+
+from cli.main import cli
+
+if __name__ == '__main__':
+    cli()
