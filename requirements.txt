@@ -18,6 +18,13 @@ pyannote.audio>=3.1.0
 pyannote.pipeline>=3.0.1
 pytorch-lightning>=2.0.0
 
+# Audio Preprocessing (Phase 3B)
+scipy>=1.10.0
+noisereduce>=3.0.0
+
+# Performance Optimizations (Phase 3C)
+psutil>=5.9.0
+
 # CLI Framework
 click>=8.1.0
 rich>=13.0.0  # Beautiful terminal output

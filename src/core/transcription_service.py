@@ -22,6 +22,11 @@ from config.settings import Settings
 from output.writers import OutputWriterFactory
 from utils.logger import ProgressLogger
 from enhancement.speaker_detection import SpeakerDetector, is_speaker_detection_available
+from enhancement.audio_preprocessing import AudioPreprocessor, AudioAnalyzer
+from enhancement.performance_optimizations import (
+    CacheManager, MemoryOptimizer, ParallelProcessor, PerformanceMonitor
+)
+from enhancement.enhanced_metadata import MetadataEnhancer
 
 
 class TranscriptionService:
@@ -45,6 +50,16 @@ class TranscriptionService:
         self.transcription_engine = None  # Lazy initialization
         self.chunked_processor = None  # Lazy initialization
         self.speaker_detector = None  # Lazy initialization
+        self.audio_preprocessor = None  # Lazy initialization
+        self.audio_analyzer = None  # Lazy initialization
+        
+        # Performance optimization components
+        self.cache_manager = None  # Lazy initialization
+        self.memory_optimizer = None  # Lazy initialization
+        self.performance_monitor = None  # Lazy initialization
+        
+        # Enhanced metadata component
+        self.metadata_enhancer = None  # Lazy initialization
         
         # Initialize output writer factory
         self.output_writer_factory = OutputWriterFactory(settings)
@@ -64,8 +79,42 @@ class TranscriptionService:
         """
         start_time = time.time()
         
+        # Initialize performance monitoring if enabled
+        performance_monitoring = None
+        if self.settings.get('enhancement', 'show_performance_metrics', False):
+            if self.performance_monitor is None:
+                self.performance_monitor = PerformanceMonitor(self.logger)
+            performance_monitoring = self.performance_monitor.start_monitoring()
+        
+        # Initialize cache manager if caching is enabled
+        if self.settings.get('enhancement', 'enable_caching', True):
+            if self.cache_manager is None:
+                cache_dir = self.settings.get('enhancement', 'cache_directory')
+                self.cache_manager = CacheManager(cache_dir=cache_dir)
+        
         try:
             self.progress_logger.info(f"🎙️ Starting transcription of {input_file}")
+            
+            # Check cache first if enabled
+            cached_result = None
+            if self.cache_manager:
+                model = self.settings.get('transcription', 'default_model', 'base')
+                language = self.settings.get('transcription', 'default_language')
+                settings_hash = self._generate_settings_hash()
+                cached_result = self.cache_manager.get_transcription_cache(
+                    input_file, model, language, settings_hash
+                )
+                
+                if cached_result:
+                    self.progress_logger.info("🎯 Using cached transcription result")
+                    # Update timing and add cache info
+                    cached_result['processing_time'] = time.time() - start_time
+                    cached_result['from_cache'] = True
+                    if performance_monitoring:
+                        cached_result['performance_stats'] = self.performance_monitor.end_monitoring(
+                            performance_monitoring, cached_result.get('duration', 0)
+                        )
+                    return cached_result
             
             # Step 1: Validate input file
             # Skip size check if force chunking is enabled or if we'll use chunking anyway
@@ -121,8 +170,36 @@ class TranscriptionService:
                 'text': result['text'],
                 'confidence': result.get('confidence', 0),
                 'word_count': result.get('word_count', 0),
-                'language': result.get('language', 'unknown')
+                'language': result.get('language', 'unknown'),
+                'from_cache': False
             }
+            
+            # Add performance stats if monitoring was enabled
+            if performance_monitoring:
+                audio_duration = result.get('duration', 0)
+                performance_stats = self.performance_monitor.end_monitoring(performance_monitoring, audio_duration)
+                final_result['performance_stats'] = performance_stats
+                
+                if self.settings.get('enhancement', 'show_performance_metrics', False):
+                    performance_report = self.performance_monitor.format_performance_report(performance_stats)
+                    self.progress_logger.info(f"\n{performance_report}")
+            
+            # Cache result if caching is enabled
+            if self.cache_manager:
+                model = self.settings.get('transcription', 'default_model', 'base')
+                language = self.settings.get('transcription', 'default_language')
+                settings_hash = self._generate_settings_hash()
+                self.cache_manager.set_transcription_cache(
+                    input_file, model, language, settings_hash, final_result
+                )
+            
+            # Perform memory optimization if enabled
+            if self.settings.get('enhancement', 'memory_optimization', False):
+                if self.memory_optimizer is None:
+                    self.memory_optimizer = MemoryOptimizer(self.logger)
+                memory_result = self.memory_optimizer.optimize_memory_usage(aggressive=True)
+                if memory_result.get('success') and memory_result.get('memory_freed_mb', 0) > 0:
+                    self.progress_logger.info(f"🧹 Freed {memory_result['memory_freed_mb']:.1f} MB of memory")
             
             self.progress_logger.info(f"✅ Transcription completed in {processing_time:.2f}s")
             return final_result
@@ -180,38 +257,92 @@ class TranscriptionService:
             else:
                 Path(output_dir).mkdir(parents=True, exist_ok=True)
             
-            # Process files
+            # Check if parallel processing should be used
+            parallel_workers = self.settings.get('enhancement', 'parallel_workers')
+            use_parallel = (
+                self.settings.get('enhancement', 'enable_performance_optimizations', False) and
+                len(files) > 1 and 
+                parallel_workers is not None and parallel_workers > 1
+            )
+            
             processed_files = 0
             failed_files = []
             
-            for i, file_path in enumerate(files, 1):
-                self.progress_logger.progress(f"Processing {Path(file_path).name}", i, len(files))
+            if use_parallel:
+                self.progress_logger.info(f"🚀 Using parallel processing with {parallel_workers} workers")
                 
-                # Generate output path
-                relative_path = Path(file_path).relative_to(input_dir)
-                output_file = Path(output_dir) / relative_path.with_suffix(f'.{output_format}')
-                output_file.parent.mkdir(parents=True, exist_ok=True)
+                # Prepare file processing tasks
+                file_tasks = []
+                for file_path in files:
+                    relative_path = Path(file_path).relative_to(input_dir)
+                    output_file = Path(output_dir) / relative_path.with_suffix(f'.{output_format}')
+                    output_file.parent.mkdir(parents=True, exist_ok=True)
+                    file_tasks.append((str(file_path), str(output_file), output_format))
                 
-                # Process file
-                result = self.transcribe_file(str(file_path), str(output_file), output_format)
+                # Create parallel processor
+                parallel_processor = ParallelProcessor(
+                    max_workers=parallel_workers,
+                    use_processes=False,  # Use threads to share state
+                    logger=self.logger
+                )
                 
-                if result['success']:
-                    processed_files += 1
-                    self.progress_logger.file_processed(
-                        Path(file_path).name, 
-                        result['processing_time'], 
-                        True
-                    )
-                else:
-                    failed_files.append({
-                        'file': str(file_path),
-                        'error': result['error']
-                    })
-                    self.progress_logger.file_processed(
-                        Path(file_path).name, 
-                        result.get('processing_time', 0), 
-                        False
-                    )
+                # Define processing function
+                def process_single_file(task):
+                    file_path, output_file, fmt = task
+                    return self.transcribe_file(file_path, output_file, fmt)
+                
+                # Process files in parallel
+                results = parallel_processor.process_batch(file_tasks, process_single_file)
+                
+                # Collect results
+                for i, (result, (file_path, _, _)) in enumerate(zip(results, file_tasks)):
+                    if result.get('success'):
+                        processed_files += 1
+                        self.progress_logger.file_processed(
+                            Path(file_path).name,
+                            result.get('processing_time', 0),
+                            True
+                        )
+                    else:
+                        failed_files.append({
+                            'file': file_path,
+                            'error': result.get('error', 'Unknown error')
+                        })
+                        self.progress_logger.file_processed(
+                            Path(file_path).name,
+                            result.get('processing_time', 0),
+                            False
+                        )
+            else:
+                # Sequential processing
+                for i, file_path in enumerate(files, 1):
+                    self.progress_logger.progress(f"Processing {Path(file_path).name}", i, len(files))
+                    
+                    # Generate output path
+                    relative_path = Path(file_path).relative_to(input_dir)
+                    output_file = Path(output_dir) / relative_path.with_suffix(f'.{output_format}')
+                    output_file.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Process file
+                    result = self.transcribe_file(str(file_path), str(output_file), output_format)
+                    
+                    if result['success']:
+                        processed_files += 1
+                        self.progress_logger.file_processed(
+                            Path(file_path).name, 
+                            result['processing_time'], 
+                            True
+                        )
+                    else:
+                        failed_files.append({
+                            'file': str(file_path),
+                            'error': result['error']
+                        })
+                        self.progress_logger.file_processed(
+                            Path(file_path).name, 
+                            result.get('processing_time', 0), 
+                            False
+                        )
             
             # Generate summary
             total_time = time.time() - start_time
@@ -257,6 +388,19 @@ class TranscriptionService:
         if not success:
             return {'success': False, 'error': message}
         
+        # Apply audio preprocessing if enabled
+        final_audio_path = audio_path
+        preprocessing_result = None
+        
+        if self.settings.get('enhancement', 'analyze_audio_quality', False):
+            preprocessing_result = self._analyze_audio_quality(audio_path)
+        
+        if self.settings.get('enhancement', 'enable_audio_preprocessing', False):
+            preprocessing_result = self._process_audio_preprocessing(audio_path)
+            if preprocessing_result and preprocessing_result.get('success'):
+                final_audio_path = preprocessing_result['processed_file']
+                self.progress_logger.info(f"🔧 Audio preprocessing completed: {', '.join(preprocessing_result['preprocessing_applied'])}")
+        
         # Transcribe
         if not self.transcription_engine:
             model = self.settings.get('transcription', 'default_model', 'base')
@@ -264,7 +408,11 @@ class TranscriptionService:
             self.transcription_engine = TranscriptionEngine(model_size=model, whisper_config=whisper_config)
         
         language = self.settings.get('transcription', 'default_language')
-        result = self.transcription_engine.transcribe_audio(audio_path, language)
+        result = self.transcription_engine.transcribe_audio(final_audio_path, language)
+        
+        # Add preprocessing information to result
+        if preprocessing_result:
+            result['audio_preprocessing'] = preprocessing_result
         
         return result
     
@@ -363,6 +511,162 @@ class TranscriptionService:
             self.progress_logger.info(f"⚠️  Speaker detection error: {str(e)}")
             transcription_result['speaker_detection_error'] = str(e)
             return transcription_result
+    
+    def _process_audio_preprocessing(self, audio_path: str) -> Dict[str, Any]:
+        """
+        Apply audio preprocessing to improve transcription quality.
+        
+        Args:
+            audio_path: Path to audio file
+            
+        Returns:
+            Dictionary with preprocessing results
+        """
+        try:
+            # Initialize audio preprocessor if needed
+            if self.audio_preprocessor is None:
+                self.audio_preprocessor = AudioPreprocessor(self.logger)
+            
+            if not self.audio_preprocessor.available:
+                self.progress_logger.info("⚠️  Audio preprocessing not available (dependencies not installed)")
+                return {
+                    'enabled': False,
+                    'processed_file': audio_path,
+                    'error': 'Audio preprocessing dependencies not available'
+                }
+            
+            self.progress_logger.info("🔧 Applying audio preprocessing...")
+            
+            # Get preprocessing settings
+            temp_dir = self.settings.get('processing', 'temp_dir')
+            noise_reduction = self.settings.get('enhancement', 'noise_reduction', False)
+            volume_normalization = self.settings.get('enhancement', 'volume_normalization', False)
+            high_pass_filter = self.settings.get('enhancement', 'high_pass_filter', False)
+            low_pass_filter = self.settings.get('enhancement', 'low_pass_filter', False)
+            enhance_speech = self.settings.get('enhancement', 'enhance_speech', False)
+            target_sample_rate = self.settings.get('enhancement', 'target_sample_rate')
+            
+            # Apply preprocessing
+            result = self.audio_preprocessor.preprocess_audio(
+                audio_path=audio_path,
+                temp_dir=temp_dir,
+                noise_reduction=noise_reduction,
+                volume_normalization=volume_normalization,
+                high_pass_filter=high_pass_filter,
+                low_pass_filter=low_pass_filter,
+                target_sample_rate=target_sample_rate,
+                enhance_speech=enhance_speech
+            )
+            
+            if result['enabled'] and result.get('success'):
+                applied = result['preprocessing_applied']
+                if applied:
+                    self.progress_logger.info(f"✅ Applied: {', '.join(applied)}")
+                else:
+                    self.progress_logger.info("ℹ️  No preprocessing needed")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Audio preprocessing error: {str(e)}")
+            return {
+                'enabled': True,
+                'processed_file': audio_path,
+                'error': str(e),
+                'success': False
+            }
+    
+    def _analyze_audio_quality(self, audio_path: str) -> Dict[str, Any]:
+        """
+        Analyze audio quality and provide recommendations.
+        
+        Args:
+            audio_path: Path to audio file
+            
+        Returns:
+            Dictionary with analysis results and recommendations
+        """
+        try:
+            # Initialize audio analyzer if needed
+            if self.audio_analyzer is None:
+                self.audio_analyzer = AudioAnalyzer(self.logger)
+            
+            if not self.audio_analyzer.available:
+                self.progress_logger.info("⚠️  Audio analysis not available (dependencies not installed)")
+                return {
+                    'available': False,
+                    'error': 'Audio analysis dependencies not available'
+                }
+            
+            self.progress_logger.info("📊 Analyzing audio quality...")
+            
+            # Analyze audio
+            result = self.audio_analyzer.analyze_audio_quality(audio_path)
+            
+            if result.get('success'):
+                quality_score = result.get('quality_score', 0)
+                recommendations = result.get('recommendations', {})
+                
+                self.progress_logger.info(f"📊 Audio quality score: {quality_score:.1f}/100")
+                
+                # Show recommendations if any
+                rec_reasons = recommendations.get('reasons', [])
+                if rec_reasons:
+                    self.progress_logger.info("💡 Recommendations:")
+                    for reason in rec_reasons:
+                        self.progress_logger.info(f"   • {reason}")
+                    
+                    # Show suggested preprocessing options
+                    suggested = []
+                    if recommendations.get('noise_reduction'):
+                        suggested.append('--noise-reduction')
+                    if recommendations.get('volume_normalization'):
+                        suggested.append('--volume-normalize')
+                    if recommendations.get('high_pass_filter'):
+                        suggested.append('--high-pass-filter')
+                    if recommendations.get('enhance_speech'):
+                        suggested.append('--enhance-speech')
+                    if recommendations.get('resample'):
+                        suggested.append('--target-sample-rate 16000')
+                    
+                    if suggested:
+                        self.progress_logger.info(f"   Try: --preprocess {' '.join(suggested)}")
+                else:
+                    self.progress_logger.info("✅ Audio quality looks good!")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Audio quality analysis error: {str(e)}")
+            return {
+                'available': True,
+                'error': str(e),
+                'success': False
+            }
+    
+    def _generate_settings_hash(self) -> str:
+        """Generate hash from relevant settings for caching."""
+        import hashlib
+        
+        # Include settings that affect transcription output
+        relevant_settings = {
+            'model': self.settings.get('transcription', 'default_model', 'base'),
+            'language': self.settings.get('transcription', 'default_language'),
+            'chunk_duration': self.settings.get('transcription', 'chunk_duration', 30),
+            'force_chunking': self.settings.get('transcription', 'force_chunking', False),
+            'speakers': self.settings.get('enhancement', 'enable_speaker_detection', False),
+            'expected_speakers': self.settings.get('enhancement', 'expected_speakers'),
+            'preprocess': self.settings.get('enhancement', 'enable_audio_preprocessing', False),
+            'noise_reduction': self.settings.get('enhancement', 'noise_reduction', False),
+            'volume_norm': self.settings.get('enhancement', 'volume_normalization', False),
+            'high_pass': self.settings.get('enhancement', 'high_pass_filter', False),
+            'low_pass': self.settings.get('enhancement', 'low_pass_filter', False),
+            'enhance_speech': self.settings.get('enhancement', 'enhance_speech', False),
+            'target_sr': self.settings.get('enhancement', 'target_sample_rate')
+        }
+        
+        settings_str = str(sorted(relevant_settings.items()))
+        return hashlib.md5(settings_str.encode()).hexdigest()[:8]
     
     def _find_supported_files(self, directory: str, recursive: bool = False) -> List[str]:
         """Find all supported audio/video files in directory."""

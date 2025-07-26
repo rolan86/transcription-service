@@ -11,6 +11,7 @@ from typing import Dict, Any
 from datetime import datetime
 
 from config.settings import Settings
+from enhancement.enhanced_metadata import MetadataEnhancer
 
 
 class BaseWriter(ABC):
@@ -18,6 +19,7 @@ class BaseWriter(ABC):
     
     def __init__(self, settings: Settings):
         self.settings = settings
+        self.metadata_enhancer = None  # Lazy initialization
     
     @abstractmethod
     def write(self, transcription_result: Dict[str, Any], output_path: str, 
@@ -28,6 +30,11 @@ class BaseWriter(ABC):
     def _generate_metadata(self, transcription_result: Dict[str, Any], 
                           file_info: Dict[str, Any]) -> Dict[str, Any]:
         """Generate metadata for the transcription."""
+        # Check if enhanced metadata is enabled
+        if self.settings.get('enhancement', 'enhanced_metadata', False):
+            return self._generate_enhanced_metadata(transcription_result, file_info)
+        
+        # Standard metadata
         return {
             'timestamp': datetime.now().isoformat(),
             'input_file': {
@@ -51,6 +58,35 @@ class BaseWriter(ABC):
             } if 'chunk_count' in transcription_result else None,
             'version': '1.0.0-MVP'
         }
+    
+    def _generate_enhanced_metadata(self, transcription_result: Dict[str, Any], 
+                                   file_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate enhanced metadata with detailed analysis."""
+        if self.metadata_enhancer is None:
+            self.metadata_enhancer = MetadataEnhancer()
+        
+        # Get enhanced metadata settings
+        settings_dict = {
+            'transcription': self.settings.config.get('transcription', {}),
+            'output': self.settings.config.get('output', {}),
+            'enhancement': self.settings.config.get('enhancement', {}),
+            'enhanced_metadata_audio_analysis': self.settings.get('enhancement', 'enhanced_metadata_audio_analysis', True),
+            'enhanced_metadata_content_analysis': self.settings.get('enhancement', 'enhanced_metadata_content_analysis', True)
+        }
+        
+        # Get performance stats if available
+        performance_stats = transcription_result.get('performance_stats')
+        if hasattr(performance_stats, '__dict__'):
+            performance_stats = performance_stats.__dict__
+        
+        # Generate enhanced metadata
+        return self.metadata_enhancer.generate_enhanced_metadata(
+            input_file=file_info['path'],
+            file_info=file_info,
+            transcription_result=transcription_result,
+            settings=settings_dict,
+            processing_stats=performance_stats
+        )
 
 
 class TextWriter(BaseWriter):

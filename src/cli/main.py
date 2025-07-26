@@ -85,9 +85,47 @@ def cli(ctx):
               help='Include speaker confidence scores in output')
 @click.option('--use-hf-token/--no-hf-token', default=False,
               help='Use HuggingFace token for better speaker detection models')
+@click.option('--preprocess/--no-preprocess', default=False,
+              help='Enable advanced audio preprocessing')
+@click.option('--noise-reduction/--no-noise-reduction', default=False,
+              help='Apply noise reduction (requires --preprocess)')
+@click.option('--volume-normalize/--no-volume-normalize', default=False,
+              help='Normalize audio volume (requires --preprocess)')
+@click.option('--high-pass-filter/--no-high-pass-filter', default=False,
+              help='Apply high-pass filter to remove low-frequency noise (requires --preprocess)')
+@click.option('--low-pass-filter/--no-low-pass-filter', default=False,
+              help='Apply low-pass filter to remove high-frequency noise (requires --preprocess)')
+@click.option('--enhance-speech/--no-enhance-speech', default=False,
+              help='Apply speech enhancement algorithms (requires --preprocess)')
+@click.option('--target-sample-rate', type=int,
+              help='Resample audio to target sample rate (e.g., 16000, 22050, 44100)')
+@click.option('--analyze-audio/--no-analyze-audio', default=False,
+              help='Analyze audio quality and show recommendations')
+@click.option('--performance/--no-performance', default=False,
+              help='Enable performance optimizations (caching, memory optimization)')
+@click.option('--cache/--no-cache', default=True,
+              help='Enable result caching for faster repeated transcriptions')
+@click.option('--cache-dir', type=click.Path(),
+              help='Directory for cache files (default: system temp)')
+@click.option('--memory-optimize/--no-memory-optimize', default=False,
+              help='Enable aggressive memory optimization (may reduce performance)')
+@click.option('--parallel-workers', type=int,
+              help='Number of parallel workers for batch processing (default: auto)')
+@click.option('--show-performance/--no-show-performance', default=False,
+              help='Show detailed performance metrics')
+@click.option('--enhanced-metadata/--no-enhanced-metadata', default=False,
+              help='Generate comprehensive metadata with detailed analysis')
+@click.option('--metadata-audio-analysis/--no-metadata-audio-analysis', default=True,
+              help='Include detailed audio analysis in metadata (requires --enhanced-metadata)')
+@click.option('--metadata-content-analysis/--no-metadata-content-analysis', default=True,
+              help='Include content analysis in metadata (requires --enhanced-metadata)')
 def transcribe(input_file, output, output_format, model, language, timestamps, 
                chunk_duration, force_chunking, verbose, quiet, config, 
-               speakers, num_speakers, speaker_labels, speaker_confidence, use_hf_token):
+               speakers, num_speakers, speaker_labels, speaker_confidence, use_hf_token,
+               preprocess, noise_reduction, volume_normalize, high_pass_filter, 
+               low_pass_filter, enhance_speech, target_sample_rate, analyze_audio,
+               performance, cache, cache_dir, memory_optimize, parallel_workers, show_performance,
+               enhanced_metadata, metadata_audio_analysis, metadata_content_analysis):
     """
     Transcribe an audio or video file to text.
     
@@ -132,7 +170,24 @@ def transcribe(input_file, output, output_format, model, language, timestamps,
             'expected_speakers': num_speakers,
             'include_speaker_labels': speaker_labels if speakers else False,
             'include_speaker_confidence': speaker_confidence,
-            'use_huggingface_token': use_hf_token
+            'use_huggingface_token': use_hf_token,
+            'enable_audio_preprocessing': preprocess,
+            'noise_reduction': noise_reduction if preprocess else False,
+            'volume_normalization': volume_normalize if preprocess else False,
+            'high_pass_filter': high_pass_filter if preprocess else False,
+            'low_pass_filter': low_pass_filter if preprocess else False,
+            'enhance_speech': enhance_speech if preprocess else False,
+            'target_sample_rate': target_sample_rate,
+            'analyze_audio_quality': analyze_audio,
+            'enable_performance_optimizations': performance,
+            'enable_caching': cache,
+            'cache_directory': cache_dir,
+            'memory_optimization': memory_optimize,
+            'parallel_workers': parallel_workers,
+            'show_performance_metrics': show_performance,
+            'enhanced_metadata': enhanced_metadata,
+            'enhanced_metadata_audio_analysis': metadata_audio_analysis if enhanced_metadata else False,
+            'enhanced_metadata_content_analysis': metadata_content_analysis if enhanced_metadata else False
         })
         
         # Show processing info

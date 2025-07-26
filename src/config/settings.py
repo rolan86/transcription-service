@@ -54,8 +54,22 @@ class Settings:
             'include_speaker_confidence': False,
             'use_huggingface_token': False,
             'enable_audio_preprocessing': False,
+            'noise_reduction': False,
+            'volume_normalization': False,
+            'high_pass_filter': False,
+            'low_pass_filter': False,
+            'enhance_speech': False,
+            'target_sample_rate': None,
+            'analyze_audio_quality': False,
             'enable_performance_optimizations': False,
-            'enhanced_metadata': False
+            'enable_caching': True,
+            'cache_directory': None,
+            'memory_optimization': False,
+            'parallel_workers': None,
+            'show_performance_metrics': False,
+            'enhanced_metadata': False,
+            'enhanced_metadata_audio_analysis': True,
+            'enhanced_metadata_content_analysis': True
         }
     }
     
@@ -183,7 +197,24 @@ class Settings:
             'expected_speakers': ('enhancement', 'expected_speakers'),
             'include_speaker_labels': ('enhancement', 'include_speaker_labels'),
             'include_speaker_confidence': ('enhancement', 'include_speaker_confidence'),
-            'use_huggingface_token': ('enhancement', 'use_huggingface_token')
+            'use_huggingface_token': ('enhancement', 'use_huggingface_token'),
+            'enable_audio_preprocessing': ('enhancement', 'enable_audio_preprocessing'),
+            'noise_reduction': ('enhancement', 'noise_reduction'),
+            'volume_normalization': ('enhancement', 'volume_normalization'),
+            'high_pass_filter': ('enhancement', 'high_pass_filter'),
+            'low_pass_filter': ('enhancement', 'low_pass_filter'),
+            'enhance_speech': ('enhancement', 'enhance_speech'),
+            'target_sample_rate': ('enhancement', 'target_sample_rate'),
+            'analyze_audio_quality': ('enhancement', 'analyze_audio_quality'),
+            'enable_performance_optimizations': ('enhancement', 'enable_performance_optimizations'),
+            'enable_caching': ('enhancement', 'enable_caching'),
+            'cache_directory': ('enhancement', 'cache_directory'),
+            'memory_optimization': ('enhancement', 'memory_optimization'),
+            'parallel_workers': ('enhancement', 'parallel_workers'),
+            'show_performance_metrics': ('enhancement', 'show_performance_metrics'),
+            'enhanced_metadata': ('enhancement', 'enhanced_metadata'),
+            'enhanced_metadata_audio_analysis': ('enhancement', 'enhanced_metadata_audio_analysis'),
+            'enhanced_metadata_content_analysis': ('enhancement', 'enhanced_metadata_content_analysis')
         }
         
         for arg_name, (section, key) in arg_mapping.items():
