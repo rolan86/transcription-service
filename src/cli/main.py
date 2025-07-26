@@ -56,8 +56,8 @@ def cli(ctx):
 @click.option('--output', '-o', type=click.Path(), 
               help='Output file path (default: auto-generated)')
 @click.option('--format', '-f', 'output_format', 
-              type=click.Choice(['txt', 'json'], case_sensitive=False),
-              default='txt', help='Output format (default: txt)')
+              type=click.Choice(['txt', 'json', 'srt', 'vtt'], case_sensitive=False),
+              default='txt', help='Output format: txt, json, srt, vtt (default: txt)')
 @click.option('--model', '-m',
               type=click.Choice(['tiny', 'base', 'small', 'medium', 'large']),
               default='base', help='Whisper model size (default: base)')
@@ -165,8 +165,8 @@ def transcribe(input_file, output, output_format, model, language, timestamps,
 @click.option('--output-dir', '-o', type=click.Path(file_okay=False, dir_okay=True),
               help='Output directory (default: same as input directory)')
 @click.option('--format', '-f', 'output_format',
-              type=click.Choice(['txt', 'json'], case_sensitive=False),
-              default='txt', help='Output format (default: txt)')
+              type=click.Choice(['txt', 'json', 'srt', 'vtt'], case_sensitive=False),
+              default='txt', help='Output format: txt, json, srt, vtt (default: txt)')
 @click.option('--model', '-m',
               type=click.Choice(['tiny', 'base', 'small', 'medium', 'large']),
               default='base', help='Whisper model size (default: base)')
