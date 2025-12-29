@@ -357,6 +357,60 @@ def config_cmd(show_config, config_path):
 
 
 @cli.command()
+@click.option('--host', '-h', default='127.0.0.1',
+              help='Host to bind to (default: 127.0.0.1)')
+@click.option('--port', '-p', default=8000, type=int,
+              help='Port to bind to (default: 8000)')
+@click.option('--reload', is_flag=True,
+              help='Enable auto-reload for development')
+def serve(host, port, reload):
+    """
+    Start the web server for browser-based transcription.
+
+    Provides a web interface for:
+    - Uploading and transcribing audio/video files
+    - Recording audio directly from microphone
+    - Real-time streaming transcription
+
+    Examples:
+
+      # Start server on default port
+      transcribe serve
+
+      # Start on custom host and port
+      transcribe serve --host 0.0.0.0 --port 3000
+
+      # Start with auto-reload for development
+      transcribe serve --reload
+    """
+    try:
+        import uvicorn
+
+        console.print(f"\n🌐 [bold blue]Web Transcription Service[/bold blue]")
+        console.print(f"📍 URL: http://{host}:{port}")
+        console.print(f"📚 API Docs: http://{host}:{port}/api/docs")
+        console.print(f"🔄 Auto-reload: {'Enabled' if reload else 'Disabled'}")
+        console.print("\nPress Ctrl+C to stop the server\n")
+
+        uvicorn.run(
+            "src.web.app:app",
+            host=host,
+            port=port,
+            reload=reload,
+        )
+
+    except ImportError:
+        console.print("❌ [bold red]Error:[/bold red] Web dependencies not installed.")
+        console.print("Run: pip install fastapi uvicorn[standard] python-multipart jinja2 aiofiles websockets")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        console.print("\n👋 [yellow]Server stopped[/yellow]")
+    except Exception as e:
+        console.print(f"❌ [bold red]Server error:[/bold red] {str(e)}")
+        sys.exit(1)
+
+
+@cli.command()
 def version():
     """Show version information."""
     console.print("\n🎙️  [bold blue]Transcription Service[/bold blue]")

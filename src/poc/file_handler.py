@@ -11,8 +11,8 @@ from typing import Tuple, Optional
 class FileHandler:
     """Handles file operations and format detection."""
     
-    SUPPORTED_AUDIO_FORMATS = {'.mp3', '.wav'}
-    SUPPORTED_VIDEO_FORMATS = {'.mp4'}
+    SUPPORTED_AUDIO_FORMATS = {'.mp3', '.wav', '.m4a', '.flac'}
+    SUPPORTED_VIDEO_FORMATS = {'.mp4', '.mov', '.avi'}
     
     @classmethod
     def get_supported_formats(cls) -> set:
