@@ -20,6 +20,10 @@ const AppState = {
 // DOM Elements
 const elements = {};
 
+// Modal state
+let modalCallback = null;
+let modalElements = {};
+
 /**
  * Initialize the application.
  */
@@ -67,6 +71,14 @@ function cacheElements() {
     elements.recordingActions = document.getElementById('recording-actions');
     elements.downloadAudioBtn = document.getElementById('download-audio-btn');
     elements.newRecordingBtn = document.getElementById('new-recording-btn');
+
+    // Modal elements
+    modalElements.modal = document.getElementById('filename-modal');
+    modalElements.title = document.getElementById('modal-title');
+    modalElements.input = document.getElementById('filename-input');
+    modalElements.extension = document.getElementById('filename-extension');
+    modalElements.cancelBtn = document.getElementById('modal-cancel');
+    modalElements.confirmBtn = document.getElementById('modal-confirm');
 }
 
 /**
@@ -115,6 +127,16 @@ function setupEventListeners() {
     if (elements.newRecordingBtn) {
         elements.newRecordingBtn.addEventListener('click', resetRecording);
     }
+
+    // Modal events
+    modalElements.cancelBtn.addEventListener('click', hideModal);
+    modalElements.confirmBtn.addEventListener('click', confirmModal);
+    modalElements.modal.addEventListener('click', (e) => {
+        if (e.target === modalElements.modal) hideModal();
+    });
+    modalElements.input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') confirmModal();
+    });
 }
 
 /**
@@ -205,6 +227,39 @@ function hideError() {
 }
 
 /**
+ * Show filename modal for downloads.
+ */
+function showModal(title, defaultName, extension, callback) {
+    modalElements.title.textContent = title;
+    modalElements.input.value = defaultName;
+    modalElements.extension.textContent = extension;
+    modalCallback = callback;
+    modalElements.modal.hidden = false;
+    modalElements.input.focus();
+    modalElements.input.select();
+}
+
+/**
+ * Hide filename modal.
+ */
+function hideModal() {
+    modalElements.modal.hidden = true;
+    modalCallback = null;
+}
+
+/**
+ * Confirm modal and trigger callback with filename.
+ */
+function confirmModal() {
+    const filename = modalElements.input.value.trim();
+    if (filename && modalCallback) {
+        const extension = modalElements.extension.textContent;
+        modalCallback(filename + extension);
+    }
+    hideModal();
+}
+
+/**
  * Copy transcript to clipboard.
  */
 async function copyTranscript() {
@@ -222,31 +277,48 @@ async function copyTranscript() {
 }
 
 /**
- * Download transcript.
+ * Download transcript with filename prompt.
  */
 function downloadTranscript() {
     if (!AppState.result?.text) return;
 
     const format = AppState.settings.outputFormat;
+    let extension = '.txt';
+
+    if (format === 'json') {
+        extension = '.json';
+    } else if (format === 'srt' || format === 'vtt') {
+        extension = '.' + format;
+    }
+
+    // Generate default filename with timestamp
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+    const defaultName = `transcript_${timestamp}`;
+
+    // Show modal to get filename
+    showModal('Save Transcript', defaultName, extension, (filename) => {
+        performTranscriptDownload(filename);
+    });
+}
+
+/**
+ * Perform the actual transcript download.
+ */
+function performTranscriptDownload(filename) {
+    const format = AppState.settings.outputFormat;
     let content = AppState.result.text;
     let mimeType = 'text/plain';
-    let extension = 'txt';
 
     if (format === 'json') {
         content = JSON.stringify(AppState.result, null, 2);
         mimeType = 'application/json';
-        extension = 'json';
-    } else if (format === 'srt' || format === 'vtt') {
-        // For SRT/VTT, we'd need segment data
-        // For now, just download as text
-        extension = format;
     }
 
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `transcript.${extension}`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -224,7 +224,7 @@ function arrayBufferToBase64(buffer) {
 }
 
 /**
- * Download the recorded audio file.
+ * Download the recorded audio file with filename prompt.
  */
 function downloadRecordedAudio() {
     if (!recordedAudioBlob) {
@@ -232,10 +232,24 @@ function downloadRecordedAudio() {
         return;
     }
 
+    // Generate default filename with timestamp
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+    const defaultName = `recording_${timestamp}`;
+
+    // Show modal to get filename
+    showModal('Save Recording', defaultName, '.webm', (filename) => {
+        performAudioDownload(filename);
+    });
+}
+
+/**
+ * Perform the actual audio download.
+ */
+function performAudioDownload(filename) {
     const url = URL.createObjectURL(recordedAudioBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `recording_${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.webm`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

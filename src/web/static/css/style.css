@@ -531,6 +531,80 @@ body {
     font-size: 0.875rem;
 }
 
+/* Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--card-bg);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    width: 90%;
+    max-width: 400px;
+    box-shadow: var(--shadow-lg);
+}
+
+.modal-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.modal-body {
+    margin-bottom: 20px;
+}
+
+.modal-body label {
+    display: block;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.filename-input-group {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.filename-input-group input {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    font-size: 1rem;
+    outline: none;
+}
+
+.filename-input-group input:focus {
+    box-shadow: inset 0 0 0 2px var(--primary-color);
+}
+
+.filename-extension {
+    padding: 12px;
+    background: var(--bg-color);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    border-left: 1px solid var(--border-color);
+}
+
+.modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
 /* Responsive */
 @media (max-width: 640px) {
     .mode-selector {

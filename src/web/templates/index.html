@@ -139,6 +139,24 @@
         <div class="error-message" id="error-message"></div>
         <button class="action-btn secondary" id="error-dismiss">Dismiss</button>
     </div>
+
+    <!-- Filename Modal -->
+    <div class="modal-overlay" id="filename-modal" hidden>
+        <div class="modal-content">
+            <h3 class="modal-title" id="modal-title">Save File</h3>
+            <div class="modal-body">
+                <label for="filename-input">File name:</label>
+                <div class="filename-input-group">
+                    <input type="text" id="filename-input" placeholder="Enter filename">
+                    <span class="filename-extension" id="filename-extension">.txt</span>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn secondary" id="modal-cancel">Cancel</button>
+                <button class="action-btn" id="modal-confirm">Download</button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
