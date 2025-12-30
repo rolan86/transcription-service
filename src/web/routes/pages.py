@@ -17,5 +17,20 @@ async def index(request: Request):
         {
             "request": request,
             "title": "Transcription Service",
+            "active_page": "transcribe",
+        },
+    )
+
+
+@router.get("/history", response_class=HTMLResponse)
+async def history(request: Request):
+    """Transcription history page."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "history.html",
+        {
+            "request": request,
+            "title": "History - Transcription Service",
+            "active_page": "history",
         },
     )

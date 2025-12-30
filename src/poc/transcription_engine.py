@@ -67,14 +67,16 @@ class TranscriptionEngine:
         except Exception as e:
             return False, f"Failed to load model: {str(e)}"
     
-    def transcribe_audio(self, audio_path: str, language: Optional[str] = None) -> Dict:
+    def transcribe_audio(self, audio_path: str, language: Optional[str] = None,
+                         initial_prompt: Optional[str] = None) -> Dict:
         """
         Transcribe audio file to text.
-        
+
         Args:
             audio_path: Path to the audio file
             language: Language code (e.g., 'en', 'es') or None for auto-detection
-            
+            initial_prompt: Optional prompt to condition the model with custom vocabulary
+
         Returns:
             Dictionary with transcription results
         """
@@ -89,18 +91,26 @@ class TranscriptionEngine:
                     'language': None,
                     'processing_time': 0
                 }
-        
+
         try:
             print(f"Transcribing audio: {audio_path}")
+            if initial_prompt:
+                print(f"Using custom vocabulary prompt")
             start_time = time.time()
-            
+
+            # Build transcribe options
+            transcribe_options = {
+                'language': language,
+                'verbose': False,  # Reduce console output
+                'word_timestamps': True,  # Enable word-level timestamps
+            }
+
+            # Add initial prompt if provided (for custom vocabulary)
+            if initial_prompt:
+                transcribe_options['initial_prompt'] = initial_prompt
+
             # Transcribe with Whisper
-            result = self.model.transcribe(
-                audio_path,
-                language=language,
-                verbose=False,  # Reduce console output
-                word_timestamps=True  # Enable word-level timestamps
-            )
+            result = self.model.transcribe(audio_path, **transcribe_options)
             
             processing_time = time.time() - start_time
             

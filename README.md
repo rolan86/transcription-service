@@ -19,7 +19,7 @@ A powerful, production-ready CLI tool for transcribing audio and video files to 
 - **Resume Capability**: Fault-tolerant chunk processing
 
 ### 💾 **Professional Output**
-- **Multiple Formats**: TXT (clean text), JSON (structured data)
+- **Multiple Formats**: TXT (clean text), JSON (structured data), SRT/VTT subtitles
 - **Rich Metadata**: Processing stats, model info, confidence scores
 - **Timestamps**: Optional timestamp inclusion
 - **Batch Processing**: Process entire directories
@@ -29,6 +29,27 @@ A powerful, production-ready CLI tool for transcribing audio and video files to 
 - **Model Selection**: Choose from Whisper's tiny to large models
 - **Language Support**: Auto-detection or manual specification
 - **Customizable**: Extensive configuration options
+
+### 🌐 **Web Interface**
+- **Modern UI**: Clean, responsive web interface with dark/light mode
+- **Upload & Record**: Upload files or record directly from microphone
+- **URL Import**: Download and transcribe from YouTube/Vimeo URLs
+- **Real-time Transcription**: Live transcript during recording
+- **Long Recording Support**: Server-side chunk persistence for 1+ hour recordings
+
+### 🎤 **Speaker Detection**
+- **Speaker Diarization**: Identify and label different speakers (pyannote.audio)
+- **Speaker Renaming**: Customize speaker names in the UI
+- **Color-coded Labels**: Visual distinction between speakers
+
+### 🔍 **Quality Features**
+- **Confidence Highlighting**: Color-coded low-confidence words for review
+- **Custom Vocabulary**: Add domain-specific terms for better accuracy
+- **History & Search**: SQLite-backed history with full-text search
+
+### 🌍 **Translation**
+- **Offline Translation**: Local translation via argos-translate (no API required)
+- **11 Languages**: English, Spanish, French, German, Italian, Portuguese, Chinese, Japanese, Korean, Russian, Arabic
 
 ## 🚀 Quick Start
 
@@ -128,6 +149,22 @@ python transcribe batch media/ --output-dir transcripts/ --recursive
 python transcribe batch meetings/ --format json --model base --timestamps
 ```
 
+### Web Interface
+```bash
+# Start the web server
+python -m src.web.app
+
+# Or with custom host/port
+python -m src.web.app --host 0.0.0.0 --port 8080
+```
+
+Then open http://localhost:8000 in your browser. The web interface provides:
+- **Upload Mode**: Drag & drop audio/video files
+- **URL Mode**: Paste YouTube or Vimeo URLs to transcribe
+- **Record Mode**: Record directly from your microphone with real-time transcription
+- **History**: Browse and search past transcriptions
+- **Translation**: Translate transcripts to 11 languages (offline)
+
 ### Configuration Management
 ```bash
 # Show current configuration
@@ -147,7 +184,12 @@ transcription-service/
 │   ├── core/              # Core transcription logic
 │   ├── output/            # Output formatting
 │   ├── poc/               # Proof of concept components
-│   └── utils/             # Utility functions
+│   ├── utils/             # Utility functions
+│   └── web/               # Web interface
+│       ├── routes/        # API and WebSocket endpoints
+│       ├── services/      # Business logic services
+│       ├── static/        # CSS, JavaScript assets
+│       └── templates/     # HTML templates
 ├── docs/                  # Documentation
 │   ├── INSTALLATION.md    # Detailed setup guide
 │   ├── USER_GUIDE.md      # Complete usage documentation

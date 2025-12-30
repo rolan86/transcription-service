@@ -9,6 +9,11 @@ class TranscriptionWebSocket {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 3;
         this.fullTranscript = '';
+
+        // Callbacks for long recording support
+        this.onReady = null;
+        this.onFlushAck = null;
+        this.onSessionStats = null;
     }
 
     /**
@@ -83,6 +88,13 @@ class TranscriptionWebSocket {
             switch (message.type) {
                 case 'ready':
                     console.log('Transcriber ready:', message.message);
+                    if (message.session_id) {
+                        console.log('Session ID:', message.session_id);
+                    }
+                    // Call callback if set
+                    if (this.onReady) {
+                        this.onReady(message);
+                    }
                     break;
 
                 case 'transcript':
@@ -97,7 +109,27 @@ class TranscriptionWebSocket {
                     console.log('Status:', message.status, message.message);
                     // Show processing status to user
                     if (message.status === 'processing') {
-                        updateLiveTranscript('Processing final transcription...');
+                        updateLiveTranscript(message.message || 'Processing final transcription...');
+                    }
+                    break;
+
+                case 'flush_ack':
+                    // Acknowledgment that server received and stored flushed audio
+                    if (message.success) {
+                        console.log(`Flush acknowledged: ${message.chunk_count} chunks, ${message.total_duration?.toFixed(1)}s total`);
+                    } else {
+                        console.error('Flush failed:', message.error);
+                    }
+                    if (this.onFlushAck) {
+                        this.onFlushAck(message);
+                    }
+                    break;
+
+                case 'session_stats':
+                    // Session statistics from server
+                    console.log('Session stats:', message);
+                    if (this.onSessionStats) {
+                        this.onSessionStats(message);
                     }
                     break;
 
@@ -107,6 +139,7 @@ class TranscriptionWebSocket {
                     break;
 
                 case 'pong':
+                case 'ping':
                     // Keep-alive response
                     break;
 
@@ -137,6 +170,13 @@ class TranscriptionWebSocket {
     handleComplete(message) {
         console.log('Transcription complete:', message);
 
+        // Log session duration for long recordings
+        if (message.session_duration) {
+            const minutes = Math.floor(message.session_duration / 60);
+            const seconds = Math.floor(message.session_duration % 60);
+            console.log(`Recording session duration: ${minutes}m ${seconds}s`);
+        }
+
         // Show final result
         const result = {
             text: message.text || this.fullTranscript.trim(),
@@ -144,6 +184,7 @@ class TranscriptionWebSocket {
             confidence: 0.9,
             processing_time: 0,
             segments: message.segments || [],
+            session_duration: message.session_duration || 0,
         };
 
         // Hide live transcript, show results

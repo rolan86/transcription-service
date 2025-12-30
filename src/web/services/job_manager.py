@@ -185,6 +185,8 @@ async def run_transcription_job(
         transcribe_func: Async function to call for transcription
         job_manager: JobManager instance
     """
+    from .history_manager import HistoryManager
+
     job = await job_manager.get_job(job_id)
     if not job:
         return
@@ -208,6 +210,14 @@ async def run_transcription_job(
                 progress=1.0,
                 result=result,
             )
+
+            # Save to history
+            try:
+                history_manager = HistoryManager()
+                history_manager.save_transcription(result, job.filename)
+            except Exception as hist_err:
+                # Don't fail the job if history save fails
+                print(f"Warning: Failed to save to history: {hist_err}")
         else:
             await job_manager.update_job_status(
                 job_id=job_id,

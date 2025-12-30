@@ -10,6 +10,10 @@ from fastapi.responses import JSONResponse
 
 from ..services.transcription_api import TranscriptionAPI
 from ..services.job_manager import JobManager, JobStatus, run_transcription_job
+from ..services.history_manager import HistoryManager
+from ..services.vocabulary_manager import VocabularyManager
+from ..services.url_downloader import URLDownloader
+from ..services.translation_service import TranslationService
 from ..models.responses import (
     HealthResponse,
     InfoResponse,
@@ -81,6 +85,8 @@ async def transcribe_file(
     enable_speakers: bool = Form(default=False),
     num_speakers: Optional[int] = Form(default=None),
     enable_preprocessing: bool = Form(default=False),
+    show_timestamps: bool = Form(default=False),
+    use_vocabulary: bool = Form(default=False),
     async_mode: bool = Form(default=True),
 ):
     """
@@ -117,6 +123,8 @@ async def transcribe_file(
         "enable_speakers": enable_speakers,
         "num_speakers": num_speakers,
         "enable_preprocessing": enable_preprocessing,
+        "show_timestamps": show_timestamps,
+        "use_vocabulary": use_vocabulary,
     }
 
     if async_mode:
@@ -166,6 +174,13 @@ async def transcribe_file(
                     detail=result.get("error", "Transcription failed"),
                 )
 
+            # Save to history
+            try:
+                history_manager = HistoryManager()
+                history_manager.save_transcription(result, filename)
+            except Exception as hist_err:
+                print(f"Warning: Failed to save to history: {hist_err}")
+
             # Format segments
             segments = [
                 SegmentResponse(
@@ -190,6 +205,127 @@ async def transcribe_file(
 
         finally:
             api.cleanup_temp_file(temp_path)
+
+
+@router.post("/transcribe/url")
+async def transcribe_url(
+    background_tasks: BackgroundTasks,
+    url: str = Form(...),
+    output_format: str = Form(default="json"),
+    model: str = Form(default="base"),
+    language: Optional[str] = Form(default=None),
+    enable_speakers: bool = Form(default=False),
+    num_speakers: Optional[int] = Form(default=None),
+    enable_preprocessing: bool = Form(default=False),
+    show_timestamps: bool = Form(default=False),
+    use_vocabulary: bool = Form(default=False),
+):
+    """
+    Download and transcribe audio from a YouTube or Vimeo URL.
+    Returns job ID immediately and processes in background.
+    """
+    api = TranscriptionAPI()
+    job_manager = JobManager()
+    downloader = URLDownloader()
+
+    # Validate URL
+    if not downloader.is_supported_url(url):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported URL. Only YouTube and Vimeo URLs are supported.",
+        )
+
+    # Get video info first
+    info = downloader.get_video_info(url)
+    if not info.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=info.get("error", "Failed to get video information"),
+        )
+
+    # Create transcription settings
+    settings = {
+        "output_format": output_format,
+        "model": model,
+        "language": language,
+        "enable_speakers": enable_speakers,
+        "num_speakers": num_speakers,
+        "enable_preprocessing": enable_preprocessing,
+        "show_timestamps": show_timestamps,
+        "use_vocabulary": use_vocabulary,
+    }
+
+    # Create job with video title as filename
+    filename = info.get("filename", "url_download.wav")
+    job = await job_manager.create_job(
+        filename=filename,
+        file_path="",  # Will be set after download
+        settings=settings,
+    )
+
+    # Define download and transcribe function
+    async def download_and_transcribe():
+        try:
+            # Download audio
+            download_result = downloader.download_audio(url)
+            if not download_result.get("success"):
+                return {"success": False, "error": download_result.get("error")}
+
+            temp_path = download_result["file_path"]
+
+            try:
+                # Transcribe
+                result = await api.transcribe_file(
+                    file_path=temp_path,
+                    **settings,
+                )
+                return result
+            finally:
+                # Cleanup downloaded file
+                downloader.cleanup(temp_path)
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # Run in background
+    background_tasks.add_task(
+        run_transcription_job,
+        job.job_id,
+        download_and_transcribe,
+        job_manager,
+    )
+
+    return {
+        "job_id": job.job_id,
+        "status": "queued",
+        "message": f"Transcription job created for: {info.get('title', url)}",
+        "video_info": {
+            "title": info.get("title"),
+            "duration": info.get("duration"),
+            "uploader": info.get("uploader"),
+        },
+    }
+
+
+@router.get("/url/info")
+async def get_url_info(url: str):
+    """Get information about a video URL without downloading."""
+    downloader = URLDownloader()
+
+    if not downloader.is_supported_url(url):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported URL. Only YouTube and Vimeo URLs are supported.",
+        )
+
+    info = downloader.get_video_info(url)
+    if not info.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=info.get("error", "Failed to get video information"),
+        )
+
+    return info
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
@@ -296,3 +432,215 @@ async def list_jobs(limit: int = 50):
         }
         for job in jobs
     ]
+
+
+# ============================================================================
+# History Endpoints
+# ============================================================================
+
+@router.get("/history")
+async def get_history(limit: int = 50, offset: int = 0):
+    """Get paginated transcription history."""
+    history_manager = HistoryManager()
+    entries = history_manager.get_history(limit=limit, offset=offset)
+    stats = history_manager.get_stats()
+
+    return {
+        "entries": entries,
+        "total": stats["total_entries"],
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/history/search")
+async def search_history(q: str, limit: int = 50):
+    """Search transcription history using full-text search."""
+    if not q or len(q) < 2:
+        raise HTTPException(status_code=400, detail="Search query must be at least 2 characters")
+
+    history_manager = HistoryManager()
+    entries = history_manager.search_history(query=q, limit=limit)
+
+    return {
+        "entries": entries,
+        "query": q,
+        "count": len(entries),
+    }
+
+
+@router.get("/history/stats")
+async def get_history_stats():
+    """Get history statistics."""
+    history_manager = HistoryManager()
+    return history_manager.get_stats()
+
+
+@router.get("/history/{entry_id}")
+async def get_history_entry(entry_id: int):
+    """Get a single history entry by ID."""
+    history_manager = HistoryManager()
+    entry = history_manager.get_entry(entry_id)
+
+    if not entry:
+        raise HTTPException(status_code=404, detail=f"History entry not found: {entry_id}")
+
+    return entry
+
+
+@router.delete("/history/{entry_id}")
+async def delete_history_entry(entry_id: int):
+    """Delete a history entry by ID."""
+    history_manager = HistoryManager()
+    deleted = history_manager.delete_entry(entry_id)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"History entry not found: {entry_id}")
+
+    return {"message": f"History entry {entry_id} deleted"}
+
+
+@router.delete("/history")
+async def clear_history():
+    """Clear all history entries."""
+    history_manager = HistoryManager()
+    count = history_manager.clear_history()
+    return {"message": f"Cleared {count} history entries"}
+
+
+# ============================================================================
+# Vocabulary Endpoints
+# ============================================================================
+
+@router.get("/vocabulary")
+async def get_vocabulary():
+    """Get custom vocabulary list."""
+    vocab_manager = VocabularyManager()
+    vocabulary = vocab_manager.get_vocabulary()
+    return {
+        "vocabulary": vocabulary,
+        "count": len(vocabulary),
+    }
+
+
+@router.put("/vocabulary")
+async def update_vocabulary(vocabulary: str = Form(...)):
+    """
+    Update custom vocabulary (replaces existing).
+    Accepts newline-separated list of terms.
+    """
+    vocab_manager = VocabularyManager()
+    success = vocab_manager.set_vocabulary_text(vocabulary)
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to save vocabulary")
+
+    new_vocab = vocab_manager.get_vocabulary()
+    return {
+        "message": "Vocabulary updated",
+        "vocabulary": new_vocab,
+        "count": len(new_vocab),
+    }
+
+
+@router.post("/vocabulary/add")
+async def add_vocabulary_term(term: str = Form(...)):
+    """Add a single term to vocabulary."""
+    vocab_manager = VocabularyManager()
+    success = vocab_manager.add_term(term)
+
+    if not success:
+        raise HTTPException(status_code=400, detail="Term already exists or is invalid")
+
+    return {"message": f"Added term: {term}"}
+
+
+@router.delete("/vocabulary/{term}")
+async def remove_vocabulary_term(term: str):
+    """Remove a term from vocabulary."""
+    vocab_manager = VocabularyManager()
+    success = vocab_manager.remove_term(term)
+
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Term not found: {term}")
+
+    return {"message": f"Removed term: {term}"}
+
+
+@router.delete("/vocabulary")
+async def clear_vocabulary():
+    """Clear all vocabulary."""
+    vocab_manager = VocabularyManager()
+    vocab_manager.clear_vocabulary()
+    return {"message": "Vocabulary cleared"}
+
+
+# ============================================================================
+# Translation Endpoints
+# ============================================================================
+
+@router.get("/translate/languages")
+async def get_translation_languages():
+    """Get available translation languages."""
+    try:
+        service = TranslationService()
+        if not service.is_available():
+            return {
+                "available": False,
+                "languages": [],
+                "error": "Translation service not available. Install argostranslate.",
+            }
+
+        return {
+            "available": True,
+            "languages": service.get_available_languages(),
+            "installed_packages": service.get_installed_packages(),
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "languages": [],
+            "error": str(e),
+        }
+
+
+@router.post("/translate")
+async def translate_text(
+    text: str = Form(...),
+    from_language: str = Form(...),
+    to_language: str = Form(...),
+):
+    """
+    Translate text from one language to another.
+    Uses offline argos-translate models.
+    """
+    try:
+        service = TranslationService()
+        if not service.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Translation service not available. Install argostranslate.",
+            )
+
+        result = service.translate(
+            text=text,
+            from_code=from_language,
+            to_code=to_language,
+            auto_install=True,
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error", "Translation failed"),
+            )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Translation error: {str(e)}",
+        )

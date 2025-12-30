@@ -387,33 +387,39 @@ class TranscriptionService:
         success, message, audio_path = self.audio_processor.process_file(file_path, file_type)
         if not success:
             return {'success': False, 'error': message}
-        
+
         # Apply audio preprocessing if enabled
         final_audio_path = audio_path
         preprocessing_result = None
-        
+
         if self.settings.get('enhancement', 'analyze_audio_quality', False):
             preprocessing_result = self._analyze_audio_quality(audio_path)
-        
+
         if self.settings.get('enhancement', 'enable_audio_preprocessing', False):
             preprocessing_result = self._process_audio_preprocessing(audio_path)
             if preprocessing_result and preprocessing_result.get('success'):
                 final_audio_path = preprocessing_result['processed_file']
                 self.progress_logger.info(f"🔧 Audio preprocessing completed: {', '.join(preprocessing_result['preprocessing_applied'])}")
-        
+
         # Transcribe
         if not self.transcription_engine:
             model = self.settings.get('transcription', 'default_model', 'base')
             whisper_config = self.settings.whisper_config
             self.transcription_engine = TranscriptionEngine(model_size=model, whisper_config=whisper_config)
-        
+
         language = self.settings.get('transcription', 'default_language')
-        result = self.transcription_engine.transcribe_audio(final_audio_path, language)
-        
+
+        # Get initial prompt for custom vocabulary
+        initial_prompt = self.settings.get('transcription', 'initial_prompt')
+
+        result = self.transcription_engine.transcribe_audio(
+            final_audio_path, language, initial_prompt=initial_prompt
+        )
+
         # Add preprocessing information to result
         if preprocessing_result:
             result['audio_preprocessing'] = preprocessing_result
-        
+
         return result
     
     def _process_with_chunking(self, file_path: str, file_type: str) -> Dict[str, Any]:

@@ -1,5 +1,6 @@
 """
 WebSocket endpoint for real-time streaming transcription.
+Supports long-duration recordings with server-side chunk persistence.
 """
 
 import json
@@ -9,8 +10,12 @@ from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..services.streaming_transcriber import StreamingTranscriber
+from ..services.recording_session import SessionManager, RecordingSession
 
 router = APIRouter()
+
+# Session manager for long recordings
+session_manager = SessionManager()
 
 
 async def finalize_with_keepalive(websocket: WebSocket, transcriber: StreamingTranscriber):
@@ -43,15 +48,17 @@ async def websocket_transcribe(websocket: WebSocket):
     Protocol:
     1. Client connects
     2. Client sends 'start' message with config: {"type": "start", "model": "base", "language": null}
-    3. Server responds with 'ready' message
+    3. Server responds with 'ready' message (includes session_id for long recordings)
     4. Client sends 'audio' messages: {"type": "audio", "data": "<base64-encoded-pcm>"}
     5. Server sends 'transcript' messages as transcription becomes available
-    6. Client sends 'stop' message to finalize
-    7. Server sends 'complete' message with final transcript
+    6. Client can send 'flush' messages to persist audio on server: {"type": "flush", "data": "<base64>"}
+    7. Client sends 'stop' message to finalize
+    8. Server sends 'complete' message with final transcript
     """
     await websocket.accept()
 
     transcriber: Optional[StreamingTranscriber] = None
+    session: Optional[RecordingSession] = None
 
     try:
         while True:
@@ -74,6 +81,7 @@ async def websocket_transcribe(websocket: WebSocket):
                 language = message.get("language")
                 sample_rate = message.get("sample_rate", 16000)
                 chunk_duration = message.get("chunk_duration", 5.0)
+                enable_persistence = message.get("enable_persistence", True)
 
                 transcriber = StreamingTranscriber(
                     model_size=model,
@@ -82,9 +90,17 @@ async def websocket_transcribe(websocket: WebSocket):
                     chunk_duration=chunk_duration,
                 )
 
+                # Create session for long recording support
+                if enable_persistence:
+                    session = session_manager.create_session(sample_rate=sample_rate)
+                    session_id = session.session_id
+                else:
+                    session_id = None
+
                 await websocket.send_json({
                     "type": "ready",
                     "message": f"Transcriber initialized with model '{model}'",
+                    "session_id": session_id,
                 })
 
             elif msg_type == "audio" and transcriber:
@@ -111,6 +127,35 @@ async def websocket_transcribe(websocket: WebSocket):
                         "confidence": result.get("confidence", 0),
                     })
 
+            elif msg_type == "flush" and session:
+                # Persist audio chunk to server-side storage
+                audio_base64 = message.get("data", "")
+                try:
+                    audio_bytes = base64.b64decode(audio_base64)
+                    chunk = session.add_chunk(audio_bytes)
+
+                    await websocket.send_json({
+                        "type": "flush_ack",
+                        "success": True,
+                        "chunk_duration": chunk.duration,
+                        "total_duration": session.total_duration,
+                        "chunk_count": len(session.chunks),
+                    })
+                except Exception as e:
+                    await websocket.send_json({
+                        "type": "flush_ack",
+                        "success": False,
+                        "error": str(e),
+                    })
+
+            elif msg_type == "session_stats" and session:
+                # Return session statistics
+                stats = session.get_stats()
+                await websocket.send_json({
+                    "type": "session_stats",
+                    **stats,
+                })
+
             elif msg_type == "stop":
                 # Finalize transcription
                 if transcriber:
@@ -121,6 +166,15 @@ async def websocket_transcribe(websocket: WebSocket):
                         "message": "Finalizing transcription, please wait...",
                     })
 
+                    # If we have persisted chunks, add them to transcriber for final processing
+                    if session and len(session.chunks) > 0:
+                        # Save session audio to temp file for complete re-transcription
+                        await websocket.send_json({
+                            "type": "status",
+                            "status": "processing",
+                            "message": f"Processing {session.total_duration:.0f}s of recorded audio...",
+                        })
+
                     # Process final transcription with keep-alive pings
                     final_result = await finalize_with_keepalive(websocket, transcriber)
 
@@ -129,6 +183,7 @@ async def websocket_transcribe(websocket: WebSocket):
                         "text": final_result.get("text", ""),
                         "is_final": True,
                         "segments": final_result.get("segments", []),
+                        "session_duration": session.total_duration if session else 0,
                     })
 
                     # Cleanup
@@ -168,3 +223,5 @@ async def websocket_transcribe(websocket: WebSocket):
     finally:
         if transcriber:
             transcriber.cleanup()
+        if session:
+            session_manager.remove_session(session.session_id)

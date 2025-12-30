@@ -1,6 +1,7 @@
 /**
  * Audio recorder for real-time transcription.
  * Uses Web Audio API for PCM capture and MediaRecorder for saving.
+ * Supports long recordings (1+ hours) with server-side chunk persistence.
  */
 
 let recorderElements = {};
@@ -13,9 +14,17 @@ let recordingStartTime = null;
 let timerInterval = null;
 let wsClient = null;
 
-// For saving audio
+// For saving audio (browser-side buffer)
 let recordedChunks = [];
 let recordedAudioBlob = null;
+
+// For long recording support
+let pcmChunks = [];  // PCM audio chunks for flushing to server
+let flushInterval = null;
+let sessionId = null;
+let lastFlushTime = 0;
+const FLUSH_INTERVAL_MS = 30000;  // Flush every 30 seconds
+const MAX_BROWSER_CHUNKS = 500;   // Max chunks to keep in browser memory
 
 /**
  * Initialize the recorder.
@@ -57,6 +66,9 @@ async function startRecording() {
         // Reset state
         recordedChunks = [];
         recordedAudioBlob = null;
+        pcmChunks = [];
+        sessionId = null;
+        lastFlushTime = Date.now();
 
         // Request microphone access
         mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -83,14 +95,26 @@ async function startRecording() {
 
         // Connect to WebSocket
         wsClient = new TranscriptionWebSocket();
+
+        // Handle session_id from ready message
+        const originalOnReady = wsClient.onReady;
+        wsClient.onReady = (message) => {
+            if (message.session_id) {
+                sessionId = message.session_id;
+                console.log('Recording session started:', sessionId);
+            }
+            if (originalOnReady) originalOnReady(message);
+        };
+
         await wsClient.connect();
 
-        // Start streaming config
+        // Start streaming config with persistence enabled
         wsClient.send({
             type: 'start',
             model: AppState.settings.model,
             language: AppState.settings.language || null,
             sample_rate: 16000,
+            enable_persistence: true,
         });
 
         // Process audio data for streaming
@@ -101,7 +125,10 @@ async function startRecording() {
                 // Convert Float32 to Int16 PCM
                 const pcmData = float32ToInt16(inputData);
 
-                // Convert to base64 and send
+                // Store PCM data for flushing to server
+                pcmChunks.push(new Int16Array(pcmData));
+
+                // Convert to base64 and send for real-time transcription
                 const base64 = arrayBufferToBase64(pcmData.buffer);
                 wsClient.send({
                     type: 'audio',
@@ -134,6 +161,9 @@ async function startRecording() {
         mediaRecorder.start(1000); // Save chunks every second
         recordingStartTime = Date.now();
 
+        // Start periodic flush for long recordings
+        startFlushInterval();
+
         // Update UI
         recorderElements.recordBtn.classList.add('recording');
         recorderElements.recordText.textContent = 'Stop';
@@ -155,6 +185,14 @@ async function startRecording() {
  * Stop recording audio.
  */
 async function stopRecording() {
+    // Stop flush interval
+    stopFlushInterval();
+
+    // Flush any remaining chunks before stopping
+    if (pcmChunks.length > 0 && wsClient && wsClient.isConnected && sessionId) {
+        await flushChunksToServer();
+    }
+
     // Stop script processor
     if (scriptProcessor) {
         scriptProcessor.disconnect();
@@ -191,6 +229,10 @@ async function stopRecording() {
     recorderElements.recordBtn.classList.remove('recording');
     recorderElements.recordText.textContent = 'Start Recording';
     recorderElements.levelBar.style.width = '0%';
+
+    // Reset long recording state
+    pcmChunks = [];
+    sessionId = null;
 
     // Don't close WebSocket here - let it close after receiving 'complete' message
     // The websocket.js handleComplete() will handle cleanup
@@ -272,14 +314,22 @@ function getRecordedAudioBlob() {
 
 /**
  * Start the recording timer.
+ * Supports HH:MM:SS format for recordings over 1 hour.
  */
 function startTimer() {
     timerInterval = setInterval(() => {
         const elapsed = Date.now() - recordingStartTime;
-        const minutes = Math.floor(elapsed / 60000);
+        const hours = Math.floor(elapsed / 3600000);
+        const minutes = Math.floor((elapsed % 3600000) / 60000);
         const seconds = Math.floor((elapsed % 60000) / 1000);
-        recorderElements.recordTimer.textContent =
-            `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+        if (hours > 0) {
+            recorderElements.recordTimer.textContent =
+                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        } else {
+            recorderElements.recordTimer.textContent =
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
     }, 1000);
 }
 
@@ -318,4 +368,124 @@ function visualizeAudioLevel() {
     }
 
     update();
+}
+
+// ============================================================================
+// Long Recording Support - Server-side chunk persistence
+// ============================================================================
+
+/**
+ * Start the periodic flush interval for long recordings.
+ */
+function startFlushInterval() {
+    if (flushInterval) {
+        clearInterval(flushInterval);
+    }
+
+    flushInterval = setInterval(() => {
+        if (pcmChunks.length > 0 && wsClient && wsClient.isConnected && sessionId) {
+            flushChunksToServer();
+        }
+    }, FLUSH_INTERVAL_MS);
+
+    console.log('Long recording support enabled - chunks will flush every', FLUSH_INTERVAL_MS / 1000, 'seconds');
+}
+
+/**
+ * Stop the flush interval.
+ */
+function stopFlushInterval() {
+    if (flushInterval) {
+        clearInterval(flushInterval);
+        flushInterval = null;
+    }
+}
+
+/**
+ * Flush accumulated PCM chunks to the server.
+ * This prevents browser memory overflow for long recordings.
+ */
+async function flushChunksToServer() {
+    if (!wsClient || !wsClient.isConnected || !sessionId) {
+        console.warn('Cannot flush: WebSocket not connected or no session');
+        return;
+    }
+
+    if (pcmChunks.length === 0) {
+        return;
+    }
+
+    try {
+        // Concatenate all PCM chunks
+        const totalLength = pcmChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const combined = new Int16Array(totalLength);
+
+        let offset = 0;
+        for (const chunk of pcmChunks) {
+            combined.set(chunk, offset);
+            offset += chunk.length;
+        }
+
+        // Convert to base64
+        const base64 = arrayBufferToBase64(combined.buffer);
+
+        // Send flush message
+        wsClient.send({
+            type: 'flush',
+            data: base64,
+        });
+
+        // Calculate duration for logging
+        const durationSec = totalLength / 16000;  // 16kHz sample rate
+        console.log(`Flushed ${pcmChunks.length} chunks (${durationSec.toFixed(1)}s) to server`);
+
+        // Clear chunks that were flushed but keep recent ones for context
+        // Keep last ~2 seconds of audio for overlap (about 8 chunks at 4096 samples each)
+        const keepCount = Math.min(8, pcmChunks.length);
+        pcmChunks = pcmChunks.slice(-keepCount);
+
+        lastFlushTime = Date.now();
+
+        // Also trim MediaRecorder chunks to prevent browser memory bloat
+        if (recordedChunks.length > MAX_BROWSER_CHUNKS) {
+            console.log(`Trimming browser audio buffer from ${recordedChunks.length} to ${MAX_BROWSER_CHUNKS} chunks`);
+            recordedChunks = recordedChunks.slice(-MAX_BROWSER_CHUNKS);
+        }
+
+    } catch (error) {
+        console.error('Error flushing chunks to server:', error);
+    }
+}
+
+/**
+ * Get current recording statistics.
+ */
+function getRecordingStats() {
+    const elapsedMs = recordingStartTime ? Date.now() - recordingStartTime : 0;
+    const browserChunks = recordedChunks.length;
+    const pcmChunkCount = pcmChunks.length;
+
+    return {
+        elapsedMs,
+        elapsedFormatted: formatElapsedTime(elapsedMs),
+        browserChunks,
+        pcmChunks: pcmChunkCount,
+        sessionId,
+        lastFlushTime,
+    };
+}
+
+/**
+ * Format elapsed time in HH:MM:SS format.
+ */
+function formatElapsedTime(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }

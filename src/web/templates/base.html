@@ -12,8 +12,12 @@
         <div class="container">
             <h1 class="logo">Transcription Service</h1>
             <nav class="nav">
-                <a href="/" class="nav-link active">Transcribe</a>
+                <a href="/" class="nav-link {% if active_page == 'transcribe' %}active{% endif %}">Transcribe</a>
+                <a href="/history" class="nav-link {% if active_page == 'history' %}active{% endif %}">History</a>
                 <a href="/api/docs" class="nav-link" target="_blank">API Docs</a>
+                <button class="theme-toggle" id="theme-toggle" title="Toggle dark mode">
+                    <span class="theme-icon" id="theme-icon">&#9790;</span>
+                </button>
             </nav>
         </div>
     </header>

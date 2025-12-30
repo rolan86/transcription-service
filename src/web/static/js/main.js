@@ -13,9 +13,19 @@ const AppState = {
         language: '',
         outputFormat: 'json',
         enableSpeakers: false,
+        showTimestamps: false,
+        showConfidence: false,
+        useVocabulary: false,
     },
     result: null,
+    speakerNames: {},  // Map of original speaker ID to custom name
 };
+
+// Vocabulary modal elements
+let vocabModalElements = {};
+
+// Translation modal elements
+let translationModalElements = {};
 
 // DOM Elements
 const elements = {};
@@ -23,6 +33,7 @@ const elements = {};
 // Modal state
 let modalCallback = null;
 let modalElements = {};
+let speakerModalElements = {};
 
 /**
  * Initialize the application.
@@ -34,6 +45,9 @@ function initApp() {
     // Set up event listeners
     setupEventListeners();
 
+    // Initialize theme
+    initTheme();
+
     // Initialize sub-modules
     initUploader();
     initRecorder();
@@ -42,16 +56,64 @@ function initApp() {
 }
 
 /**
+ * Initialize theme from localStorage or system preference.
+ */
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme');
+    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    if (savedTheme) {
+        setTheme(savedTheme);
+    } else if (systemPrefersDark) {
+        setTheme('dark');
+    } else {
+        setTheme('light');
+    }
+}
+
+/**
+ * Set the theme and update UI.
+ */
+function setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    updateThemeIcon(theme);
+}
+
+/**
+ * Toggle between light and dark themes.
+ */
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+}
+
+/**
+ * Update the theme toggle icon.
+ */
+function updateThemeIcon(theme) {
+    const icon = document.getElementById('theme-icon');
+    if (icon) {
+        // Moon for light mode (click to go dark), Sun for dark mode (click to go light)
+        icon.innerHTML = theme === 'light' ? '&#9790;' : '&#9728;';
+    }
+}
+
+/**
  * Cache frequently used DOM elements.
  */
 function cacheElements() {
     elements.modeBtns = document.querySelectorAll('.mode-btn');
     elements.uploadMode = document.getElementById('upload-mode');
+    elements.urlMode = document.getElementById('url-mode');
     elements.recordMode = document.getElementById('record-mode');
     elements.modelSelect = document.getElementById('model-select');
     elements.languageSelect = document.getElementById('language-select');
     elements.formatSelect = document.getElementById('format-select');
     elements.enableSpeakers = document.getElementById('enable-speakers');
+    elements.showTimestamps = document.getElementById('show-timestamps');
+    elements.showConfidence = document.getElementById('show-confidence');
     elements.progressContainer = document.getElementById('progress-container');
     elements.progressFill = document.getElementById('progress-fill');
     elements.progressText = document.getElementById('progress-text');
@@ -79,12 +141,59 @@ function cacheElements() {
     modalElements.extension = document.getElementById('filename-extension');
     modalElements.cancelBtn = document.getElementById('modal-cancel');
     modalElements.confirmBtn = document.getElementById('modal-confirm');
+
+    // Speaker rename elements
+    elements.renameSpeakersBtn = document.getElementById('rename-speakers-btn');
+    speakerModalElements.modal = document.getElementById('speaker-modal');
+    speakerModalElements.list = document.getElementById('speaker-rename-list');
+    speakerModalElements.cancelBtn = document.getElementById('speaker-modal-cancel');
+    speakerModalElements.confirmBtn = document.getElementById('speaker-modal-confirm');
+
+    // Vocabulary elements
+    elements.useVocabulary = document.getElementById('use-vocabulary');
+    elements.vocabEditBtn = document.getElementById('vocab-edit-btn');
+    vocabModalElements.modal = document.getElementById('vocabulary-modal');
+    vocabModalElements.textarea = document.getElementById('vocabulary-textarea');
+    vocabModalElements.count = document.getElementById('vocab-count');
+    vocabModalElements.cancelBtn = document.getElementById('vocab-modal-cancel');
+    vocabModalElements.saveBtn = document.getElementById('vocab-modal-save');
+
+    // URL import elements
+    elements.urlInput = document.getElementById('url-input');
+    elements.urlFetchBtn = document.getElementById('url-fetch-btn');
+    elements.urlPreview = document.getElementById('url-preview');
+    elements.urlThumbnail = document.getElementById('url-thumbnail');
+    elements.urlTitle = document.getElementById('url-title');
+    elements.urlUploader = document.getElementById('url-uploader');
+    elements.urlDuration = document.getElementById('url-duration');
+    elements.urlClearBtn = document.getElementById('url-clear-btn');
+    elements.urlTranscribeBtn = document.getElementById('url-transcribe-btn');
+
+    // Translation elements
+    elements.translateBtn = document.getElementById('translate-btn');
+    translationModalElements.modal = document.getElementById('translation-modal');
+    translationModalElements.fromSelect = document.getElementById('translate-from');
+    translationModalElements.toSelect = document.getElementById('translate-to');
+    translationModalElements.progress = document.getElementById('translation-progress');
+    translationModalElements.progressFill = document.getElementById('translation-progress-fill');
+    translationModalElements.progressText = document.getElementById('translation-progress-text');
+    translationModalElements.result = document.getElementById('translation-result');
+    translationModalElements.output = document.getElementById('translation-output');
+    translationModalElements.cancelBtn = document.getElementById('translation-modal-cancel');
+    translationModalElements.translateBtn = document.getElementById('translation-modal-translate');
+    translationModalElements.copyBtn = document.getElementById('translation-modal-copy');
 }
 
 /**
  * Set up event listeners.
  */
 function setupEventListeners() {
+    // Theme toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+        themeToggle.addEventListener('click', toggleTheme);
+    }
+
     // Mode switching
     elements.modeBtns.forEach(btn => {
         btn.addEventListener('click', () => switchMode(btn.dataset.mode));
@@ -105,6 +214,14 @@ function setupEventListeners() {
 
     elements.enableSpeakers.addEventListener('change', (e) => {
         AppState.settings.enableSpeakers = e.target.checked;
+    });
+
+    elements.showTimestamps.addEventListener('change', (e) => {
+        AppState.settings.showTimestamps = e.target.checked;
+    });
+
+    elements.showConfidence.addEventListener('change', (e) => {
+        AppState.settings.showConfidence = e.target.checked;
     });
 
     // Result actions
@@ -137,10 +254,77 @@ function setupEventListeners() {
     modalElements.input.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') confirmModal();
     });
+
+    // Speaker rename events
+    elements.renameSpeakersBtn.addEventListener('click', showSpeakerRenameModal);
+    speakerModalElements.cancelBtn.addEventListener('click', hideSpeakerRenameModal);
+    speakerModalElements.confirmBtn.addEventListener('click', applySpeakerRenames);
+    speakerModalElements.modal.addEventListener('click', (e) => {
+        if (e.target === speakerModalElements.modal) hideSpeakerRenameModal();
+    });
+
+    // Vocabulary events
+    if (elements.useVocabulary) {
+        elements.useVocabulary.addEventListener('change', (e) => {
+            AppState.settings.useVocabulary = e.target.checked;
+        });
+    }
+    if (elements.vocabEditBtn) {
+        elements.vocabEditBtn.addEventListener('click', showVocabularyModal);
+    }
+    if (vocabModalElements.cancelBtn) {
+        vocabModalElements.cancelBtn.addEventListener('click', hideVocabularyModal);
+    }
+    if (vocabModalElements.saveBtn) {
+        vocabModalElements.saveBtn.addEventListener('click', saveVocabulary);
+    }
+    if (vocabModalElements.modal) {
+        vocabModalElements.modal.addEventListener('click', (e) => {
+            if (e.target === vocabModalElements.modal) hideVocabularyModal();
+        });
+    }
+    if (vocabModalElements.textarea) {
+        vocabModalElements.textarea.addEventListener('input', updateVocabCount);
+    }
+
+    // URL import events
+    if (elements.urlFetchBtn) {
+        elements.urlFetchBtn.addEventListener('click', fetchUrlInfo);
+    }
+    if (elements.urlInput) {
+        elements.urlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') fetchUrlInfo();
+        });
+    }
+    if (elements.urlClearBtn) {
+        elements.urlClearBtn.addEventListener('click', clearUrlPreview);
+    }
+    if (elements.urlTranscribeBtn) {
+        elements.urlTranscribeBtn.addEventListener('click', startUrlTranscription);
+    }
+
+    // Translation events
+    if (elements.translateBtn) {
+        elements.translateBtn.addEventListener('click', showTranslationModal);
+    }
+    if (translationModalElements.cancelBtn) {
+        translationModalElements.cancelBtn.addEventListener('click', hideTranslationModal);
+    }
+    if (translationModalElements.translateBtn) {
+        translationModalElements.translateBtn.addEventListener('click', performTranslation);
+    }
+    if (translationModalElements.copyBtn) {
+        translationModalElements.copyBtn.addEventListener('click', copyTranslation);
+    }
+    if (translationModalElements.modal) {
+        translationModalElements.modal.addEventListener('click', (e) => {
+            if (e.target === translationModalElements.modal) hideTranslationModal();
+        });
+    }
 }
 
 /**
- * Switch between upload and record modes.
+ * Switch between upload, url, and record modes.
  */
 function switchMode(mode) {
     AppState.mode = mode;
@@ -152,6 +336,9 @@ function switchMode(mode) {
 
     // Show/hide mode content
     elements.uploadMode.classList.toggle('active', mode === 'upload');
+    if (elements.urlMode) {
+        elements.urlMode.classList.toggle('active', mode === 'url');
+    }
     elements.recordMode.classList.toggle('active', mode === 'record');
 
     // Hide results when switching modes
@@ -190,8 +377,34 @@ function hideProgress() {
 function showResults(result) {
     AppState.result = result;
 
-    // Display transcript
-    elements.transcriptText.textContent = result.text || '';
+    // Check if speaker detection was enabled and has speakers
+    const hasSpeakers = result.speaker_detection &&
+                        result.speaker_detection.enabled &&
+                        result.speaker_detection.speakers &&
+                        result.speaker_detection.speakers.length > 0;
+
+    // Show/hide rename speakers button
+    elements.renameSpeakersBtn.hidden = !hasSpeakers;
+
+    // Determine how to display transcript
+    const hasSegments = result.segments && result.segments.length > 0;
+    const useTimestamps = AppState.settings.showTimestamps && hasSegments;
+    const useConfidence = AppState.settings.showConfidence && hasSegments;
+    const useSpeakers = hasSpeakers && hasSegments;
+
+    // Format transcript based on enabled features
+    if (useSpeakers || useConfidence) {
+        // Use innerHTML for rich formatting
+        elements.transcriptText.innerHTML = formatTranscriptRich(result.segments, {
+            timestamps: useTimestamps,
+            confidence: useConfidence,
+            speakers: useSpeakers,
+        });
+    } else if (useTimestamps) {
+        elements.transcriptText.textContent = formatTranscriptWithTimestamps(result.segments);
+    } else {
+        elements.transcriptText.textContent = result.text || '';
+    }
 
     // Display metadata
     elements.resultLanguage.textContent = `Language: ${result.language || 'Unknown'}`;
@@ -201,6 +414,201 @@ function showResults(result) {
     // Show container
     elements.resultsContainer.hidden = false;
     hideProgress();
+}
+
+/**
+ * Format transcript with inline timestamps.
+ */
+function formatTranscriptWithTimestamps(segments) {
+    return segments.map(seg => {
+        const timestamp = formatTimestamp(seg.start);
+        const text = (seg.text || '').trim();
+        return `[${timestamp}] ${text}`;
+    }).join('\n');
+}
+
+/**
+ * Format seconds to MM:SS or HH:MM:SS format.
+ */
+function formatTimestamp(seconds) {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hrs > 0) {
+        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Format transcript with confidence highlighting.
+ */
+function formatTranscriptWithConfidence(segments, includeTimestamps) {
+    return segments.map(seg => {
+        const text = (seg.text || '').trim();
+        const confidence = getConfidenceFromSegment(seg);
+        const confidenceClass = getConfidenceClass(confidence);
+
+        let line = '';
+        if (includeTimestamps) {
+            line += `[${formatTimestamp(seg.start)}] `;
+        }
+
+        // Wrap the segment text with confidence class
+        line += `<span class="${confidenceClass}">${escapeHtml(text)}</span>`;
+        return line;
+    }).join('\n');
+}
+
+/**
+ * Get confidence score from segment (convert avg_logprob to probability).
+ */
+function getConfidenceFromSegment(segment) {
+    // Whisper returns avg_logprob which is negative
+    // Convert to approximate probability using exp()
+    if (segment.confidence !== undefined) {
+        return segment.confidence;
+    }
+    if (segment.avg_logprob !== undefined) {
+        // avg_logprob is typically between -1 and 0
+        // exp(-0.5) ≈ 0.6, exp(-0.2) ≈ 0.82, exp(-0.1) ≈ 0.9
+        return Math.exp(segment.avg_logprob);
+    }
+    return 1.0; // Default to high confidence if no data
+}
+
+/**
+ * Get CSS class based on confidence level.
+ */
+function getConfidenceClass(confidence) {
+    if (confidence >= 0.7) return 'confidence-high';
+    if (confidence >= 0.5) return 'confidence-medium';
+    return 'confidence-low';
+}
+
+/**
+ * Escape HTML to prevent XSS.
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+/**
+ * Format transcript with rich features (speakers, timestamps, confidence).
+ */
+function formatTranscriptRich(segments, options) {
+    return segments.map(seg => {
+        const text = (seg.text || '').trim();
+        let line = '';
+
+        // Add speaker label if enabled
+        if (options.speakers && seg.speaker) {
+            const speakerName = getSpeakerDisplayName(seg.speaker);
+            const speakerIndex = getSpeakerIndex(seg.speaker);
+            line += `<span class="speaker-label speaker-${speakerIndex % 6}">${escapeHtml(speakerName)}</span>`;
+        }
+
+        // Add timestamp if enabled
+        if (options.timestamps) {
+            line += `[${formatTimestamp(seg.start)}] `;
+        }
+
+        // Add text with confidence highlighting if enabled
+        if (options.confidence) {
+            const confidence = getConfidenceFromSegment(seg);
+            const confidenceClass = getConfidenceClass(confidence);
+            line += `<span class="${confidenceClass}">${escapeHtml(text)}</span>`;
+        } else {
+            line += escapeHtml(text);
+        }
+
+        return line;
+    }).join('\n');
+}
+
+/**
+ * Get display name for speaker (custom name or original).
+ */
+function getSpeakerDisplayName(speakerId) {
+    return AppState.speakerNames[speakerId] || speakerId;
+}
+
+/**
+ * Get numeric index from speaker ID (e.g., SPEAKER_00 -> 0).
+ */
+function getSpeakerIndex(speakerId) {
+    const match = speakerId.match(/\d+/);
+    return match ? parseInt(match[0], 10) : 0;
+}
+
+/**
+ * Show speaker rename modal.
+ */
+function showSpeakerRenameModal() {
+    if (!AppState.result || !AppState.result.speaker_detection) return;
+
+    const speakers = AppState.result.speaker_detection.speakers || [];
+    const list = speakerModalElements.list;
+
+    // Clear existing items
+    list.innerHTML = '';
+
+    // Create input for each speaker
+    speakers.forEach((speaker, index) => {
+        const item = document.createElement('div');
+        item.className = 'speaker-rename-item';
+
+        const label = document.createElement('span');
+        label.className = `speaker-label speaker-${index % 6}`;
+        label.textContent = speaker;
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Enter custom name';
+        input.dataset.speaker = speaker;
+        input.value = AppState.speakerNames[speaker] || '';
+
+        item.appendChild(label);
+        item.appendChild(input);
+        list.appendChild(item);
+    });
+
+    speakerModalElements.modal.hidden = false;
+}
+
+/**
+ * Hide speaker rename modal.
+ */
+function hideSpeakerRenameModal() {
+    speakerModalElements.modal.hidden = true;
+}
+
+/**
+ * Apply speaker renames and refresh display.
+ */
+function applySpeakerRenames() {
+    const inputs = speakerModalElements.list.querySelectorAll('input');
+
+    inputs.forEach(input => {
+        const speaker = input.dataset.speaker;
+        const customName = input.value.trim();
+
+        if (customName) {
+            AppState.speakerNames[speaker] = customName;
+        } else {
+            delete AppState.speakerNames[speaker];
+        }
+    });
+
+    hideSpeakerRenameModal();
+
+    // Refresh the display with new names
+    if (AppState.result) {
+        showResults(AppState.result);
+    }
 }
 
 /**
@@ -344,6 +752,7 @@ function resetApp() {
 
     AppState.isProcessing = false;
     AppState.currentJob = null;
+    AppState.speakerNames = {};
     AppState.result = null;
 }
 
@@ -406,6 +815,394 @@ function resetRecording() {
     const timer = document.getElementById('record-timer');
     if (timer) {
         timer.textContent = '00:00';
+    }
+}
+
+// ============================================================================
+// URL Import Functions
+// ============================================================================
+
+// Store current URL info
+let currentUrlInfo = null;
+
+/**
+ * Fetch information about a video URL.
+ */
+async function fetchUrlInfo() {
+    const url = elements.urlInput.value.trim();
+    if (!url) return;
+
+    elements.urlFetchBtn.disabled = true;
+    elements.urlFetchBtn.textContent = 'Fetching...';
+    hideError();
+
+    try {
+        const response = await fetch(`/api/url/info?url=${encodeURIComponent(url)}`);
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to fetch video info');
+        }
+
+        const info = await response.json();
+        currentUrlInfo = info;
+        showUrlPreview(info);
+
+    } catch (error) {
+        showError(error.message);
+        clearUrlPreview();
+    } finally {
+        elements.urlFetchBtn.disabled = false;
+        elements.urlFetchBtn.textContent = 'Fetch Info';
+    }
+}
+
+/**
+ * Show URL preview with video information.
+ */
+function showUrlPreview(info) {
+    elements.urlTitle.textContent = info.title || 'Unknown';
+    elements.urlUploader.textContent = info.uploader || '';
+    elements.urlDuration.textContent = info.duration ? formatDuration(info.duration) : '';
+
+    if (info.thumbnail) {
+        elements.urlThumbnail.style.backgroundImage = `url(${info.thumbnail})`;
+    } else {
+        elements.urlThumbnail.style.backgroundImage = '';
+    }
+
+    elements.urlPreview.hidden = false;
+    elements.urlTranscribeBtn.disabled = false;
+}
+
+/**
+ * Clear URL preview and reset state.
+ */
+function clearUrlPreview() {
+    currentUrlInfo = null;
+    elements.urlPreview.hidden = true;
+    elements.urlTranscribeBtn.disabled = true;
+    elements.urlThumbnail.style.backgroundImage = '';
+}
+
+/**
+ * Start transcription from URL.
+ */
+async function startUrlTranscription() {
+    if (!currentUrlInfo || AppState.isProcessing) return;
+
+    const url = elements.urlInput.value.trim();
+    if (!url) return;
+
+    AppState.isProcessing = true;
+    elements.urlTranscribeBtn.disabled = true;
+    hideError();
+    showProgress('Downloading and processing video...', 10);
+
+    try {
+        const formData = new FormData();
+        formData.append('url', url);
+        formData.append('output_format', AppState.settings.outputFormat);
+        formData.append('model', AppState.settings.model);
+        formData.append('enable_speakers', AppState.settings.enableSpeakers);
+        formData.append('show_timestamps', AppState.settings.showTimestamps);
+        formData.append('use_vocabulary', AppState.settings.useVocabulary);
+
+        if (AppState.settings.language) {
+            formData.append('language', AppState.settings.language);
+        }
+
+        const response = await fetch('/api/transcribe/url', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to start transcription');
+        }
+
+        const data = await response.json();
+        AppState.currentJob = data.job_id;
+
+        updateProgress('Downloading audio...', 20);
+        await pollJobStatus(data.job_id);
+
+    } catch (error) {
+        showError(error.message);
+        hideProgress();
+    } finally {
+        AppState.isProcessing = false;
+        elements.urlTranscribeBtn.disabled = false;
+    }
+}
+
+/**
+ * Format duration in seconds to MM:SS or HH:MM:SS.
+ */
+function formatDuration(seconds) {
+    if (!seconds) return '';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+
+    if (h > 0) {
+        return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// ============================================================================
+// Vocabulary Management
+// ============================================================================
+
+/**
+ * Show vocabulary modal and load current vocabulary.
+ */
+async function showVocabularyModal() {
+    try {
+        const response = await fetch('/api/vocabulary');
+        if (response.ok) {
+            const data = await response.json();
+            vocabModalElements.textarea.value = data.vocabulary.join('\n');
+            updateVocabCount();
+        }
+    } catch (err) {
+        console.error('Failed to load vocabulary:', err);
+        vocabModalElements.textarea.value = '';
+    }
+
+    vocabModalElements.modal.hidden = false;
+    vocabModalElements.textarea.focus();
+}
+
+/**
+ * Hide vocabulary modal.
+ */
+function hideVocabularyModal() {
+    vocabModalElements.modal.hidden = true;
+}
+
+/**
+ * Save vocabulary to server.
+ */
+async function saveVocabulary() {
+    const vocabulary = vocabModalElements.textarea.value;
+
+    try {
+        const formData = new FormData();
+        formData.append('vocabulary', vocabulary);
+
+        const response = await fetch('/api/vocabulary', {
+            method: 'PUT',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to save vocabulary');
+        }
+
+        const data = await response.json();
+        console.log('Vocabulary saved:', data.count, 'terms');
+
+        // Auto-enable vocabulary if terms were added
+        if (data.count > 0 && elements.useVocabulary) {
+            elements.useVocabulary.checked = true;
+            AppState.settings.useVocabulary = true;
+        }
+
+        hideVocabularyModal();
+    } catch (err) {
+        console.error('Failed to save vocabulary:', err);
+        showError('Failed to save vocabulary');
+    }
+}
+
+/**
+ * Update vocabulary term count display.
+ */
+function updateVocabCount() {
+    const text = vocabModalElements.textarea.value;
+    const terms = text.split('\n').filter(line => line.trim()).length;
+    vocabModalElements.count.textContent = `${terms} term${terms !== 1 ? 's' : ''}`;
+}
+
+// ============================================================================
+// Translation Functions
+// ============================================================================
+
+// Store current translation
+let currentTranslation = null;
+
+/**
+ * Show translation modal and load available languages.
+ */
+async function showTranslationModal() {
+    if (!AppState.result?.text) {
+        showError('No transcript to translate');
+        return;
+    }
+
+    // Reset modal state
+    translationModalElements.progress.hidden = true;
+    translationModalElements.result.hidden = true;
+    translationModalElements.translateBtn.hidden = false;
+    translationModalElements.copyBtn.hidden = true;
+    currentTranslation = null;
+
+    // Load available languages
+    try {
+        const response = await fetch('/api/translate/languages');
+        if (response.ok) {
+            const data = await response.json();
+            populateLanguageSelects(data.languages);
+        }
+    } catch (err) {
+        console.error('Failed to load translation languages:', err);
+    }
+
+    // Set source language from detected language
+    if (AppState.result?.language) {
+        const detectedLang = AppState.result.language.toLowerCase();
+        const fromSelect = translationModalElements.fromSelect;
+        for (let option of fromSelect.options) {
+            if (option.value === detectedLang) {
+                fromSelect.value = detectedLang;
+                break;
+            }
+        }
+    }
+
+    translationModalElements.modal.hidden = false;
+}
+
+/**
+ * Populate language select dropdowns.
+ */
+function populateLanguageSelects(languages) {
+    const fromSelect = translationModalElements.fromSelect;
+    const toSelect = translationModalElements.toSelect;
+
+    // Clear existing options
+    fromSelect.innerHTML = '';
+    toSelect.innerHTML = '<option value="">Select language...</option>';
+
+    // Add language options
+    languages.forEach(lang => {
+        const fromOption = document.createElement('option');
+        fromOption.value = lang.code;
+        fromOption.textContent = lang.name;
+        fromSelect.appendChild(fromOption);
+
+        const toOption = document.createElement('option');
+        toOption.value = lang.code;
+        toOption.textContent = lang.name;
+        toSelect.appendChild(toOption);
+    });
+
+    // Set English as default source
+    fromSelect.value = 'en';
+}
+
+/**
+ * Hide translation modal.
+ */
+function hideTranslationModal() {
+    translationModalElements.modal.hidden = true;
+}
+
+/**
+ * Perform translation of the transcript.
+ */
+async function performTranslation() {
+    const fromLang = translationModalElements.fromSelect.value;
+    const toLang = translationModalElements.toSelect.value;
+
+    if (!toLang) {
+        showError('Please select a target language');
+        return;
+    }
+
+    if (fromLang === toLang) {
+        showError('Source and target languages must be different');
+        return;
+    }
+
+    if (!AppState.result?.text) {
+        showError('No transcript to translate');
+        return;
+    }
+
+    // Show progress
+    translationModalElements.progress.hidden = false;
+    translationModalElements.result.hidden = true;
+    translationModalElements.translateBtn.disabled = true;
+    translationModalElements.progressFill.style.width = '30%';
+    translationModalElements.progressText.textContent = 'Preparing translation...';
+
+    try {
+        // Note: First translation may download the model, which can take time
+        translationModalElements.progressText.textContent = 'Translating (may download model on first use)...';
+        translationModalElements.progressFill.style.width = '50%';
+
+        const formData = new FormData();
+        formData.append('text', AppState.result.text);
+        formData.append('from_code', fromLang);
+        formData.append('to_code', toLang);
+
+        const response = await fetch('/api/translate', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Translation failed');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Translation failed');
+        }
+
+        translationModalElements.progressFill.style.width = '100%';
+        translationModalElements.progressText.textContent = 'Translation complete!';
+
+        // Show result
+        currentTranslation = data.translated_text;
+        translationModalElements.output.textContent = data.translated_text;
+        translationModalElements.result.hidden = false;
+        translationModalElements.translateBtn.hidden = true;
+        translationModalElements.copyBtn.hidden = false;
+
+        // Hide progress after a moment
+        setTimeout(() => {
+            translationModalElements.progress.hidden = true;
+        }, 1000);
+
+    } catch (error) {
+        showError(error.message);
+        translationModalElements.progress.hidden = true;
+    } finally {
+        translationModalElements.translateBtn.disabled = false;
+    }
+}
+
+/**
+ * Copy translation to clipboard.
+ */
+async function copyTranslation() {
+    if (!currentTranslation) return;
+
+    try {
+        await navigator.clipboard.writeText(currentTranslation);
+        translationModalElements.copyBtn.textContent = 'Copied!';
+        setTimeout(() => {
+            translationModalElements.copyBtn.textContent = 'Copy Translation';
+        }, 2000);
+    } catch (err) {
+        showError('Failed to copy to clipboard');
     }
 }
 

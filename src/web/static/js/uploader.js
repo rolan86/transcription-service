@@ -123,6 +123,8 @@ async function startTranscription() {
         formData.append('output_format', AppState.settings.outputFormat);
         formData.append('model', AppState.settings.model);
         formData.append('enable_speakers', AppState.settings.enableSpeakers);
+        formData.append('show_timestamps', AppState.settings.showTimestamps);
+        formData.append('use_vocabulary', AppState.settings.useVocabulary);
         formData.append('async_mode', 'true');
 
         if (AppState.settings.language) {

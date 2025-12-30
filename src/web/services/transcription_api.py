@@ -53,6 +53,7 @@ class TranscriptionAPI:
         enable_speakers: bool = False,
         num_speakers: Optional[int] = None,
         enable_preprocessing: bool = False,
+        initial_prompt: Optional[str] = None,
     ) -> None:
         """Update settings for transcription."""
         # Force re-create service with new settings on next use
@@ -60,6 +61,7 @@ class TranscriptionAPI:
 
         self.settings._config["transcription"]["default_model"] = model
         self.settings._config["transcription"]["default_language"] = language
+        self.settings._config["transcription"]["initial_prompt"] = initial_prompt
         self.settings._config["enhancement"]["enable_speaker_detection"] = enable_speakers
         self.settings._config["enhancement"]["expected_speakers"] = num_speakers
         self.settings._config["enhancement"]["enable_audio_preprocessing"] = enable_preprocessing
@@ -73,6 +75,7 @@ class TranscriptionAPI:
         enable_speakers: bool = False,
         num_speakers: Optional[int] = None,
         enable_preprocessing: bool = False,
+        use_vocabulary: bool = False,
     ) -> Dict[str, Any]:
         """
         Transcribe a file asynchronously.
@@ -85,10 +88,18 @@ class TranscriptionAPI:
             enable_speakers: Enable speaker detection
             num_speakers: Expected number of speakers
             enable_preprocessing: Enable audio preprocessing
+            use_vocabulary: Use custom vocabulary from vocabulary manager
 
         Returns:
             Transcription result dictionary
         """
+        # Get initial prompt from vocabulary if enabled
+        initial_prompt = None
+        if use_vocabulary:
+            from .vocabulary_manager import VocabularyManager
+            vocab_manager = VocabularyManager()
+            initial_prompt = vocab_manager.get_initial_prompt()
+
         # Update settings
         self.update_settings(
             model=model,
@@ -96,6 +107,7 @@ class TranscriptionAPI:
             enable_speakers=enable_speakers,
             num_speakers=num_speakers,
             enable_preprocessing=enable_preprocessing,
+            initial_prompt=initial_prompt,
         )
 
         # Run transcription in thread pool to avoid blocking

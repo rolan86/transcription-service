@@ -10,6 +10,10 @@
             <span class="icon">&#128193;</span>
             Upload File
         </button>
+        <button class="mode-btn" data-mode="url">
+            <span class="icon">&#128279;</span>
+            URL Import
+        </button>
         <button class="mode-btn" data-mode="record">
             <span class="icon">&#127908;</span>
             Record Audio
@@ -59,6 +63,25 @@
                 Enable Speaker Detection
             </label>
         </div>
+        <div class="setting-group checkbox-group">
+            <label>
+                <input type="checkbox" id="show-timestamps">
+                Show Timestamps
+            </label>
+        </div>
+        <div class="setting-group checkbox-group">
+            <label>
+                <input type="checkbox" id="show-confidence">
+                Highlight Low Confidence
+            </label>
+        </div>
+        <div class="setting-group checkbox-group vocabulary-group">
+            <label>
+                <input type="checkbox" id="use-vocabulary">
+                Use Custom Vocabulary
+            </label>
+            <button class="vocab-edit-btn" id="vocab-edit-btn" title="Edit Vocabulary">Edit</button>
+        </div>
     </div>
 
     <!-- Upload Mode -->
@@ -76,6 +99,31 @@
         </div>
         <button class="transcribe-btn" id="transcribe-btn" disabled>
             Transcribe
+        </button>
+    </div>
+
+    <!-- URL Mode -->
+    <div id="url-mode" class="mode-content">
+        <div class="url-input-container">
+            <div class="url-input-group">
+                <input type="text" id="url-input" class="url-input" placeholder="Paste YouTube or Vimeo URL here...">
+                <button class="url-fetch-btn" id="url-fetch-btn">Fetch Info</button>
+            </div>
+            <p class="url-hint">Supported: YouTube (youtube.com, youtu.be) and Vimeo (vimeo.com)</p>
+        </div>
+        <div class="url-preview" id="url-preview" hidden>
+            <div class="url-thumbnail" id="url-thumbnail"></div>
+            <div class="url-info">
+                <h4 class="url-title" id="url-title"></h4>
+                <p class="url-meta">
+                    <span id="url-uploader"></span>
+                    <span id="url-duration"></span>
+                </p>
+            </div>
+            <button class="url-clear-btn" id="url-clear-btn">&times;</button>
+        </div>
+        <button class="transcribe-btn" id="url-transcribe-btn" disabled>
+            Transcribe from URL
         </button>
     </div>
 
@@ -117,6 +165,7 @@
                 <span class="meta-item" id="result-confidence"></span>
                 <span class="meta-item" id="result-time"></span>
             </div>
+            <button class="rename-speakers-btn" id="rename-speakers-btn" hidden>Rename Speakers</button>
         </div>
         <div class="transcript-box" id="transcript-box">
             <pre id="transcript-text"></pre>
@@ -124,6 +173,7 @@
         <div class="results-actions">
             <button class="action-btn" id="copy-btn">Copy Text</button>
             <button class="action-btn" id="download-btn">Download</button>
+            <button class="action-btn" id="translate-btn">Translate</button>
             <button class="action-btn secondary" id="new-transcription-btn">New Transcription</button>
         </div>
     </div>
@@ -154,6 +204,90 @@
             <div class="modal-actions">
                 <button class="action-btn secondary" id="modal-cancel">Cancel</button>
                 <button class="action-btn" id="modal-confirm">Download</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Speaker Rename Modal -->
+    <div class="modal-overlay" id="speaker-modal" hidden>
+        <div class="modal-content">
+            <h3 class="modal-title">Rename Speakers</h3>
+            <div class="modal-body">
+                <p style="margin-bottom: 16px; color: var(--text-muted); font-size: 0.875rem;">
+                    Enter custom names for each speaker. Leave blank to keep original label.
+                </p>
+                <div class="speaker-rename-list" id="speaker-rename-list">
+                    <!-- Speaker rename inputs will be dynamically added here -->
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn secondary" id="speaker-modal-cancel">Cancel</button>
+                <button class="action-btn" id="speaker-modal-confirm">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vocabulary Modal -->
+    <div class="modal-overlay" id="vocabulary-modal" hidden>
+        <div class="modal-content modal-large">
+            <h3 class="modal-title">Custom Vocabulary</h3>
+            <div class="modal-body">
+                <p style="margin-bottom: 12px; color: var(--text-muted); font-size: 0.875rem;">
+                    Add domain-specific words, technical terms, or names to improve transcription accuracy.
+                    Enter one term per line.
+                </p>
+                <textarea
+                    id="vocabulary-textarea"
+                    class="vocabulary-textarea"
+                    placeholder="Enter custom vocabulary (one term per line)&#10;&#10;Examples:&#10;PyTorch&#10;Kubernetes&#10;Dr. Smith"
+                    rows="10"
+                ></textarea>
+                <div class="vocab-count" id="vocab-count">0 terms</div>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn secondary" id="vocab-modal-cancel">Cancel</button>
+                <button class="action-btn" id="vocab-modal-save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Translation Modal -->
+    <div class="modal-overlay" id="translation-modal" hidden>
+        <div class="modal-content modal-large">
+            <h3 class="modal-title">Translate Transcript</h3>
+            <div class="modal-body">
+                <div class="translation-settings">
+                    <div class="translation-lang-row">
+                        <div class="translation-lang-group">
+                            <label for="translate-from">From</label>
+                            <select id="translate-from" class="translation-select">
+                                <option value="en">English</option>
+                            </select>
+                        </div>
+                        <span class="translation-arrow">&#8594;</span>
+                        <div class="translation-lang-group">
+                            <label for="translate-to">To</label>
+                            <select id="translate-to" class="translation-select">
+                                <option value="">Select language...</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="translation-progress" id="translation-progress" hidden>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="translation-progress-fill"></div>
+                    </div>
+                    <p class="progress-text" id="translation-progress-text">Translating...</p>
+                </div>
+                <div class="translation-result" id="translation-result" hidden>
+                    <label>Translated Text</label>
+                    <div class="translation-output" id="translation-output"></div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn secondary" id="translation-modal-cancel">Cancel</button>
+                <button class="action-btn" id="translation-modal-translate">Translate</button>
+                <button class="action-btn" id="translation-modal-copy" hidden>Copy Translation</button>
             </div>
         </div>
     </div>
