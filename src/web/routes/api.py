@@ -274,10 +274,15 @@ async def transcribe_url(
             temp_path = download_result["file_path"]
 
             try:
+                # Filter out display-only options that transcribe_file doesn't accept
+                transcribe_settings = {
+                    k: v for k, v in settings.items()
+                    if k not in ("show_timestamps",)
+                }
                 # Transcribe
                 result = await api.transcribe_file(
                     file_path=temp_path,
-                    **settings,
+                    **transcribe_settings,
                 )
                 return result
             finally:

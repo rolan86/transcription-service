@@ -57,30 +57,33 @@
                 <option value="vtt">VTT Subtitles</option>
             </select>
         </div>
-        <div class="setting-group checkbox-group">
-            <label>
-                <input type="checkbox" id="enable-speakers">
-                Enable Speaker Detection
-            </label>
-        </div>
-        <div class="setting-group checkbox-group">
-            <label>
-                <input type="checkbox" id="show-timestamps">
-                Show Timestamps
-            </label>
-        </div>
-        <div class="setting-group checkbox-group">
-            <label>
-                <input type="checkbox" id="show-confidence">
-                Highlight Low Confidence
-            </label>
-        </div>
-        <div class="setting-group checkbox-group vocabulary-group">
-            <label>
-                <input type="checkbox" id="use-vocabulary">
-                Use Custom Vocabulary
-            </label>
-            <button class="vocab-edit-btn" id="vocab-edit-btn" title="Edit Vocabulary">Edit</button>
+        <!-- Options row for checkboxes -->
+        <div class="settings-options">
+            <div class="setting-group checkbox-group">
+                <label>
+                    <input type="checkbox" id="enable-speakers">
+                    Speaker Detection
+                </label>
+            </div>
+            <div class="setting-group checkbox-group">
+                <label>
+                    <input type="checkbox" id="show-timestamps">
+                    Timestamps
+                </label>
+            </div>
+            <div class="setting-group checkbox-group">
+                <label>
+                    <input type="checkbox" id="show-confidence">
+                    Confidence Highlights
+                </label>
+            </div>
+            <div class="setting-group checkbox-group vocabulary-group">
+                <label>
+                    <input type="checkbox" id="use-vocabulary">
+                    Custom Vocabulary
+                </label>
+                <button class="vocab-edit-btn" id="vocab-edit-btn" title="Edit Vocabulary">Edit</button>
+            </div>
         </div>
     </div>
 

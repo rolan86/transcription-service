@@ -33,11 +33,65 @@
     --warning-color: #fbbf24;
     --bg-color: #0f172a;
     --card-bg: #1e293b;
-    --text-color: #e2e8f0;
+    --text-color: #f1f5f9;
     --text-muted: #94a3b8;
-    --border-color: #334155;
-    --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.3);
+    --border-color: #475569;
+    --input-bg: #0f172a;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4);
+}
+
+/* Dark mode form element fixes */
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+    color: var(--text-muted);
+    opacity: 0.8;
+}
+
+[data-theme="dark"] .setting-group select {
+    background-color: var(--input-bg);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+}
+
+[data-theme="dark"] .upload-zone:hover,
+[data-theme="dark"] .upload-zone.dragover {
+    border-color: var(--primary-color);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+[data-theme="dark"] .filename-input-group input {
+    background-color: var(--input-bg);
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .speaker-rename-item input {
+    background-color: var(--input-bg);
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .checkbox-group input[type="checkbox"] {
+    background: var(--input-bg);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .checkbox-group input[type="checkbox"]:hover {
+    border-color: var(--primary-color);
+}
+
+[data-theme="dark"] .vocab-edit-btn {
+    background: var(--card-bg);
+}
+
+[data-theme="dark"] .theme-toggle {
+    background: var(--card-bg);
 }
 
 * {
@@ -186,19 +240,21 @@ body {
 
 /* Settings Panel */
 .settings-panel {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 16px;
     margin-bottom: 24px;
     padding: 20px;
     background: var(--bg-color);
     border-radius: var(--radius);
+    border: 1px solid var(--border-color);
 }
 
 .setting-group {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    min-width: 140px;
 }
 
 .setting-group label {
@@ -215,7 +271,15 @@ body {
     border-radius: var(--radius);
     font-size: 0.875rem;
     background: var(--card-bg);
+    color: var(--text-color);
     cursor: pointer;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
 }
 
 .setting-group select:focus {
@@ -223,17 +287,75 @@ body {
     border-color: var(--primary-color);
 }
 
+/* Options section for checkboxes */
+.settings-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 24px;
+    width: 100%;
+    margin-top: 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
 .checkbox-group {
-    justify-content: flex-end;
+    flex-direction: row;
+    align-items: center;
+    min-width: auto;
 }
 
 .checkbox-group label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     cursor: pointer;
     font-size: 0.875rem;
     text-transform: none;
+    font-weight: 400;
+    color: var(--text-color);
+    user-select: none;
+}
+
+/* Custom checkbox styling */
+.checkbox-group input[type="checkbox"] {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--card-bg);
+    cursor: pointer;
+    position: relative;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.checkbox-group input[type="checkbox"]:hover {
+    border-color: var(--primary-color);
+}
+
+.checkbox-group input[type="checkbox"]:checked {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.checkbox-group input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 2px;
+    width: 5px;
+    height: 9px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.checkbox-group input[type="checkbox"]:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
 }
 
 /* Mode Content */
@@ -1034,23 +1156,24 @@ body {
 .vocabulary-group {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
 }
 
 .vocab-edit-btn {
-    padding: 4px 10px;
+    padding: 5px 12px;
     font-size: 0.75rem;
-    background: var(--bg-color);
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
     border-radius: var(--radius);
     cursor: pointer;
     transition: all 0.2s;
+    font-weight: 500;
 }
 
 .vocab-edit-btn:hover {
-    border-color: var(--primary-color);
-    color: var(--primary-color);
+    background: var(--primary-color);
+    color: white;
 }
 
 .vocabulary-textarea {

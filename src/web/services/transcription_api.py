@@ -59,12 +59,12 @@ class TranscriptionAPI:
         # Force re-create service with new settings on next use
         self._service = None
 
-        self.settings._config["transcription"]["default_model"] = model
-        self.settings._config["transcription"]["default_language"] = language
-        self.settings._config["transcription"]["initial_prompt"] = initial_prompt
-        self.settings._config["enhancement"]["enable_speaker_detection"] = enable_speakers
-        self.settings._config["enhancement"]["expected_speakers"] = num_speakers
-        self.settings._config["enhancement"]["enable_audio_preprocessing"] = enable_preprocessing
+        self.settings.config["transcription"]["default_model"] = model
+        self.settings.config["transcription"]["default_language"] = language
+        self.settings.config["transcription"]["initial_prompt"] = initial_prompt
+        self.settings.config["enhancement"]["enable_speaker_detection"] = enable_speakers
+        self.settings.config["enhancement"]["expected_speakers"] = num_speakers
+        self.settings.config["enhancement"]["enable_audio_preprocessing"] = enable_preprocessing
 
     async def transcribe_file(
         self,
