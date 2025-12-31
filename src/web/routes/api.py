@@ -791,3 +791,223 @@ async def cleanup_transcript_with_diff(
             status_code=500,
             detail=f"Cleanup failed: {str(e)}",
         )
+
+
+# ============================================================================
+# AI Extraction Endpoints
+# ============================================================================
+
+def _get_ai_provider_for_extraction(provider: Optional[str] = None):
+    """Helper to get an AI provider for extraction services."""
+    from ..services.ai_provider import AIProviderFactory
+    from config.settings import Settings
+
+    settings = Settings()
+    ai_config = settings.config.get("ai", {})
+
+    available = AIProviderFactory.get_available_providers(ai_config)
+    if not available:
+        raise HTTPException(
+            status_code=503,
+            detail="No AI providers available. Configure API keys or local model path.",
+        )
+
+    provider_type = provider or ai_config.get("provider", "claude")
+    if provider_type not in available:
+        provider_type = available[0]
+
+    provider_config = ai_config.get(provider_type, {})
+    return AIProviderFactory.create(provider_type, provider_config), provider_type
+
+
+@router.post("/ai/extract/summary")
+async def extract_summary(
+    transcript: str = Form(...),
+    length: str = Form(default="medium"),
+    provider: Optional[str] = Form(default=None),
+):
+    """
+    Generate a summary of the transcript.
+    Length options: 'short' (2-3 sentences), 'medium' (1 paragraph), 'long' (2-3 paragraphs)
+    """
+    from ..services.extraction_service import ExtractionService
+
+    try:
+        ai_provider, provider_used = _get_ai_provider_for_extraction(provider)
+        service = ExtractionService(ai_provider)
+        summary = await service.summarize(transcript, length)
+
+        return {
+            "success": True,
+            "summary": summary,
+            "length": length,
+            "provider_used": provider_used,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Summary extraction failed: {str(e)}")
+
+
+@router.post("/ai/extract/key-points")
+async def extract_key_points(
+    transcript: str = Form(...),
+    max_points: int = Form(default=5),
+    provider: Optional[str] = Form(default=None),
+):
+    """
+    Extract key points and main topics from the transcript.
+    """
+    from ..services.extraction_service import ExtractionService
+
+    try:
+        ai_provider, provider_used = _get_ai_provider_for_extraction(provider)
+        service = ExtractionService(ai_provider)
+        key_points = await service.extract_key_points(transcript, max_points)
+
+        return {
+            "success": True,
+            "key_points": key_points,
+            "count": len(key_points),
+            "provider_used": provider_used,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Key points extraction failed: {str(e)}")
+
+
+@router.post("/ai/extract/action-items")
+async def extract_action_items(
+    transcript: str = Form(...),
+    provider: Optional[str] = Form(default=None),
+):
+    """
+    Extract action items, tasks, and commitments from the transcript.
+    """
+    from ..services.extraction_service import ExtractionService
+
+    try:
+        ai_provider, provider_used = _get_ai_provider_for_extraction(provider)
+        service = ExtractionService(ai_provider)
+        action_items = await service.extract_action_items(transcript)
+
+        return {
+            "success": True,
+            "action_items": action_items,
+            "count": len(action_items),
+            "provider_used": provider_used,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Action items extraction failed: {str(e)}")
+
+
+@router.post("/ai/extract/entities")
+async def extract_entities(
+    transcript: str = Form(...),
+    provider: Optional[str] = Form(default=None),
+):
+    """
+    Extract named entities (people, organizations, locations, dates, products) from the transcript.
+    """
+    from ..services.extraction_service import ExtractionService
+
+    try:
+        ai_provider, provider_used = _get_ai_provider_for_extraction(provider)
+        service = ExtractionService(ai_provider)
+        entities = await service.extract_entities(transcript)
+
+        return {
+            "success": True,
+            "entities": entities,
+            "provider_used": provider_used,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Entity extraction failed: {str(e)}")
+
+
+@router.post("/ai/extract/topics")
+async def extract_topics(
+    transcript: str = Form(...),
+    max_topics: int = Form(default=5),
+    provider: Optional[str] = Form(default=None),
+):
+    """
+    Extract main topics discussed in the transcript.
+    """
+    from ..services.extraction_service import ExtractionService
+
+    try:
+        ai_provider, provider_used = _get_ai_provider_for_extraction(provider)
+        service = ExtractionService(ai_provider)
+        topics = await service.extract_topics(transcript, max_topics)
+
+        return {
+            "success": True,
+            "topics": topics,
+            "count": len(topics),
+            "provider_used": provider_used,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Topic extraction failed: {str(e)}")
+
+
+@router.post("/ai/extract/analyze")
+async def full_analysis(
+    transcript: str = Form(...),
+    provider: Optional[str] = Form(default=None),
+):
+    """
+    Run comprehensive analysis on the transcript.
+    Returns summary, key points, action items, entities, and topics.
+    """
+    from ..services.extraction_service import ExtractionService
+
+    try:
+        ai_provider, provider_used = _get_ai_provider_for_extraction(provider)
+        service = ExtractionService(ai_provider)
+        analysis = await service.full_analysis(transcript)
+
+        return {
+            "success": True,
+            **analysis,
+            "provider_used": provider_used,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Full analysis failed: {str(e)}")
+
+
+@router.post("/ai/extract/meeting-notes")
+async def generate_meeting_notes(
+    transcript: str = Form(...),
+    provider: Optional[str] = Form(default=None),
+):
+    """
+    Generate formatted meeting notes from the transcript.
+    Returns notes in Markdown format.
+    """
+    from ..services.extraction_service import ExtractionService
+
+    try:
+        ai_provider, provider_used = _get_ai_provider_for_extraction(provider)
+        service = ExtractionService(ai_provider)
+        notes = await service.generate_meeting_notes(transcript)
+
+        return {
+            "success": True,
+            "meeting_notes": notes,
+            "format": "markdown",
+            "provider_used": provider_used,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Meeting notes generation failed: {str(e)}")

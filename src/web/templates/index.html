@@ -177,8 +177,41 @@
             <button class="action-btn" id="copy-btn">Copy Text</button>
             <button class="action-btn" id="download-btn">Download</button>
             <button class="action-btn" id="cleanup-btn">Clean Up</button>
+            <div class="dropdown-container">
+                <button class="action-btn" id="analyze-btn">Analyze ▾</button>
+                <div class="dropdown-menu" id="analyze-menu" hidden>
+                    <button class="dropdown-item" data-action="summary">Quick Summary</button>
+                    <button class="dropdown-item" data-action="key-points">Key Points</button>
+                    <button class="dropdown-item" data-action="action-items">Action Items</button>
+                    <button class="dropdown-item" data-action="entities">Entities</button>
+                    <button class="dropdown-item" data-action="meeting-notes">Meeting Notes</button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" data-action="full-analysis">Full Analysis</button>
+                </div>
+            </div>
             <button class="action-btn" id="translate-btn">Translate</button>
             <button class="action-btn secondary" id="new-transcription-btn">New Transcription</button>
+        </div>
+
+        <!-- Analysis Panel -->
+        <div class="analysis-panel" id="analysis-panel" hidden>
+            <div class="analysis-header">
+                <h3>Analysis Results</h3>
+                <div class="analysis-actions">
+                    <button class="analysis-action-btn" id="copy-analysis-btn" title="Copy to clipboard">Copy</button>
+                    <button class="analysis-action-btn" id="export-analysis-btn" title="Export as Markdown">Export</button>
+                    <button class="analysis-close-btn" id="close-analysis-btn">&times;</button>
+                </div>
+            </div>
+            <div class="analysis-progress" id="analysis-progress" hidden>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="analysis-progress-fill"></div>
+                </div>
+                <p class="progress-text" id="analysis-progress-text">Analyzing...</p>
+            </div>
+            <div class="analysis-content" id="analysis-content">
+                <!-- Analysis sections will be dynamically added here -->
+            </div>
         </div>
     </div>
 

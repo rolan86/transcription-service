@@ -30,6 +30,9 @@ let translationModalElements = {};
 // Cleanup modal elements
 let cleanupModalElements = {};
 
+// Analysis panel elements
+let analysisElements = {};
+
 // DOM Elements
 const elements = {};
 
@@ -203,6 +206,18 @@ function cacheElements() {
     cleanupModalElements.runBtn = document.getElementById('cleanup-modal-run');
     cleanupModalElements.applyBtn = document.getElementById('cleanup-modal-apply');
     cleanupModalElements.copyBtn = document.getElementById('cleanup-modal-copy');
+
+    // Analysis elements
+    elements.analyzeBtn = document.getElementById('analyze-btn');
+    elements.analyzeMenu = document.getElementById('analyze-menu');
+    analysisElements.panel = document.getElementById('analysis-panel');
+    analysisElements.progress = document.getElementById('analysis-progress');
+    analysisElements.progressFill = document.getElementById('analysis-progress-fill');
+    analysisElements.progressText = document.getElementById('analysis-progress-text');
+    analysisElements.content = document.getElementById('analysis-content');
+    analysisElements.copyBtn = document.getElementById('copy-analysis-btn');
+    analysisElements.exportBtn = document.getElementById('export-analysis-btn');
+    analysisElements.closeBtn = document.getElementById('close-analysis-btn');
 }
 
 /**
@@ -369,6 +384,37 @@ function setupEventListeners() {
             tab.addEventListener('click', () => switchCleanupTab(tab.dataset.view));
         });
     }
+
+    // Analysis events
+    if (elements.analyzeBtn) {
+        elements.analyzeBtn.addEventListener('click', toggleAnalyzeMenu);
+    }
+    if (elements.analyzeMenu) {
+        const items = elements.analyzeMenu.querySelectorAll('.dropdown-item');
+        items.forEach(item => {
+            item.addEventListener('click', () => {
+                hideAnalyzeMenu();
+                runAnalysis(item.dataset.action);
+            });
+        });
+    }
+    if (analysisElements.closeBtn) {
+        analysisElements.closeBtn.addEventListener('click', hideAnalysisPanel);
+    }
+    if (analysisElements.copyBtn) {
+        analysisElements.copyBtn.addEventListener('click', copyAnalysisResults);
+    }
+    if (analysisElements.exportBtn) {
+        analysisElements.exportBtn.addEventListener('click', exportAnalysisResults);
+    }
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+        if (elements.analyzeMenu && !elements.analyzeMenu.hidden) {
+            if (!elements.analyzeBtn.contains(e.target) && !elements.analyzeMenu.contains(e.target)) {
+                hideAnalyzeMenu();
+            }
+        }
+    });
 }
 
 /**
@@ -1578,6 +1624,469 @@ function showTemporaryMessage(message) {
     setTimeout(() => {
         elements.copyBtn.textContent = originalText;
     }, 2000);
+}
+
+// ============================================================================
+// AI Analysis Functions
+// ============================================================================
+
+// Store current analysis result
+let currentAnalysisResult = null;
+
+/**
+ * Toggle the analyze dropdown menu.
+ */
+function toggleAnalyzeMenu() {
+    if (elements.analyzeMenu) {
+        elements.analyzeMenu.hidden = !elements.analyzeMenu.hidden;
+    }
+}
+
+/**
+ * Hide the analyze dropdown menu.
+ */
+function hideAnalyzeMenu() {
+    if (elements.analyzeMenu) {
+        elements.analyzeMenu.hidden = true;
+    }
+}
+
+/**
+ * Run analysis based on the selected action.
+ */
+async function runAnalysis(action) {
+    if (!AppState.result?.text) {
+        showError('No transcript to analyze');
+        return;
+    }
+
+    // Show analysis panel with progress
+    showAnalysisPanel();
+    showAnalysisProgress('Analyzing transcript...');
+
+    const endpoint = getAnalysisEndpoint(action);
+    const formData = new FormData();
+    formData.append('transcript', AppState.result.text);
+
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Analysis failed');
+        }
+
+        const data = await response.json();
+        currentAnalysisResult = { action, data };
+
+        hideAnalysisProgress();
+        displayAnalysisResult(action, data);
+
+    } catch (error) {
+        showError(error.message);
+        hideAnalysisPanel();
+    }
+}
+
+/**
+ * Get API endpoint for analysis action.
+ */
+function getAnalysisEndpoint(action) {
+    const endpoints = {
+        'summary': '/api/ai/extract/summary',
+        'key-points': '/api/ai/extract/key-points',
+        'action-items': '/api/ai/extract/action-items',
+        'entities': '/api/ai/extract/entities',
+        'meeting-notes': '/api/ai/extract/meeting-notes',
+        'full-analysis': '/api/ai/extract/analyze',
+    };
+    return endpoints[action] || endpoints['summary'];
+}
+
+/**
+ * Show the analysis panel.
+ */
+function showAnalysisPanel() {
+    if (analysisElements.panel) {
+        analysisElements.panel.hidden = false;
+    }
+}
+
+/**
+ * Hide the analysis panel.
+ */
+function hideAnalysisPanel() {
+    if (analysisElements.panel) {
+        analysisElements.panel.hidden = true;
+    }
+    currentAnalysisResult = null;
+}
+
+/**
+ * Show analysis progress.
+ */
+function showAnalysisProgress(text) {
+    if (analysisElements.progress) {
+        analysisElements.progress.hidden = false;
+        analysisElements.progressText.textContent = text;
+        analysisElements.progressFill.style.width = '50%';
+    }
+    if (analysisElements.content) {
+        analysisElements.content.innerHTML = '';
+    }
+}
+
+/**
+ * Hide analysis progress.
+ */
+function hideAnalysisProgress() {
+    if (analysisElements.progress) {
+        analysisElements.progress.hidden = true;
+    }
+}
+
+/**
+ * Display analysis result in the panel.
+ */
+function displayAnalysisResult(action, data) {
+    const content = analysisElements.content;
+    if (!content) return;
+
+    content.innerHTML = '';
+
+    switch (action) {
+        case 'summary':
+            content.appendChild(createAnalysisSection('Summary', data.summary, 'text'));
+            break;
+
+        case 'key-points':
+            content.appendChild(createAnalysisSection('Key Points', data.key_points, 'list'));
+            break;
+
+        case 'action-items':
+            content.appendChild(createAnalysisSection('Action Items', data.action_items, 'action-items'));
+            break;
+
+        case 'entities':
+            content.appendChild(createAnalysisSection('Entities', data.entities, 'entities'));
+            break;
+
+        case 'meeting-notes':
+            content.appendChild(createAnalysisSection('Meeting Notes', data.meeting_notes, 'markdown'));
+            break;
+
+        case 'full-analysis':
+            if (data.summary) {
+                content.appendChild(createAnalysisSection('Summary', data.summary, 'text'));
+            }
+            if (data.key_points && data.key_points.length > 0) {
+                content.appendChild(createAnalysisSection('Key Points', data.key_points, 'list'));
+            }
+            if (data.action_items && data.action_items.length > 0) {
+                content.appendChild(createAnalysisSection('Action Items', data.action_items, 'action-items'));
+            }
+            if (data.topics && data.topics.length > 0) {
+                content.appendChild(createAnalysisSection('Topics', data.topics, 'topics'));
+            }
+            if (data.entities) {
+                content.appendChild(createAnalysisSection('Entities', data.entities, 'entities'));
+            }
+            break;
+    }
+
+    // Add provider info
+    if (data.provider_used) {
+        const providerInfo = document.createElement('div');
+        providerInfo.className = 'analysis-provider';
+        providerInfo.textContent = `Analyzed by: ${data.provider_used}`;
+        content.appendChild(providerInfo);
+    }
+}
+
+/**
+ * Create an analysis section element.
+ */
+function createAnalysisSection(title, data, type) {
+    const section = document.createElement('div');
+    section.className = 'analysis-section';
+
+    const header = document.createElement('h4');
+    header.textContent = title;
+    section.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'analysis-section-body';
+
+    switch (type) {
+        case 'text':
+            body.textContent = data || 'No data available';
+            break;
+
+        case 'markdown':
+            body.innerHTML = simpleMarkdownToHtml(data || 'No data available');
+            break;
+
+        case 'list':
+            if (Array.isArray(data) && data.length > 0) {
+                const ul = document.createElement('ul');
+                data.forEach(item => {
+                    const li = document.createElement('li');
+                    li.textContent = item;
+                    ul.appendChild(li);
+                });
+                body.appendChild(ul);
+            } else {
+                body.textContent = 'No items found';
+            }
+            break;
+
+        case 'action-items':
+            if (Array.isArray(data) && data.length > 0) {
+                const ul = document.createElement('ul');
+                ul.className = 'action-items-list';
+                data.forEach(item => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<span class="action-text">${escapeHtml(item.action)}</span>`;
+                    if (item.assignee) {
+                        li.innerHTML += ` <span class="action-assignee">@${escapeHtml(item.assignee)}</span>`;
+                    }
+                    ul.appendChild(li);
+                });
+                body.appendChild(ul);
+            } else {
+                body.textContent = 'No action items found';
+            }
+            break;
+
+        case 'topics':
+            if (Array.isArray(data) && data.length > 0) {
+                const ul = document.createElement('ul');
+                ul.className = 'topics-list';
+                data.forEach(item => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<span class="topic-name">${escapeHtml(item.topic)}</span>`;
+                    if (item.relevance) {
+                        li.innerHTML += ` <span class="topic-relevance relevance-${item.relevance}">${item.relevance}</span>`;
+                    }
+                    ul.appendChild(li);
+                });
+                body.appendChild(ul);
+            } else {
+                body.textContent = 'No topics found';
+            }
+            break;
+
+        case 'entities':
+            if (data && typeof data === 'object') {
+                const categories = ['people', 'organizations', 'locations', 'dates', 'products'];
+                let hasEntities = false;
+
+                categories.forEach(category => {
+                    if (data[category] && data[category].length > 0) {
+                        hasEntities = true;
+                        const catDiv = document.createElement('div');
+                        catDiv.className = 'entity-category';
+                        catDiv.innerHTML = `<strong>${capitalizeFirst(category)}:</strong> ${data[category].map(e => escapeHtml(e)).join(', ')}`;
+                        body.appendChild(catDiv);
+                    }
+                });
+
+                if (!hasEntities) {
+                    body.textContent = 'No entities found';
+                }
+            } else {
+                body.textContent = 'No entities found';
+            }
+            break;
+
+        default:
+            body.textContent = JSON.stringify(data, null, 2);
+    }
+
+    section.appendChild(body);
+    return section;
+}
+
+/**
+ * Simple markdown to HTML converter.
+ */
+function simpleMarkdownToHtml(markdown) {
+    return markdown
+        .replace(/^### (.*$)/gm, '<h5>$1</h5>')
+        .replace(/^## (.*$)/gm, '<h4>$1</h4>')
+        .replace(/^# (.*$)/gm, '<h3>$1</h3>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/^- (.*$)/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/^(.+)$/gm, '<p>$1</p>')
+        .replace(/<p><h/g, '<h')
+        .replace(/<\/h(\d)><\/p>/g, '</h$1>')
+        .replace(/<p><ul>/g, '<ul>')
+        .replace(/<\/ul><\/p>/g, '</ul>');
+}
+
+/**
+ * Capitalize first letter.
+ */
+function capitalizeFirst(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/**
+ * Copy analysis results to clipboard.
+ */
+async function copyAnalysisResults() {
+    if (!currentAnalysisResult) return;
+
+    const text = formatAnalysisAsText(currentAnalysisResult.action, currentAnalysisResult.data);
+
+    try {
+        await navigator.clipboard.writeText(text);
+        analysisElements.copyBtn.textContent = 'Copied!';
+        setTimeout(() => {
+            analysisElements.copyBtn.textContent = 'Copy';
+        }, 2000);
+    } catch (err) {
+        showError('Failed to copy to clipboard');
+    }
+}
+
+/**
+ * Export analysis results as Markdown.
+ */
+function exportAnalysisResults() {
+    if (!currentAnalysisResult) return;
+
+    const markdown = formatAnalysisAsMarkdown(currentAnalysisResult.action, currentAnalysisResult.data);
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+    const filename = `analysis_${currentAnalysisResult.action}_${timestamp}.md`;
+
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+/**
+ * Format analysis as plain text.
+ */
+function formatAnalysisAsText(action, data) {
+    let text = '';
+
+    switch (action) {
+        case 'summary':
+            text = `Summary:\n${data.summary}`;
+            break;
+        case 'key-points':
+            text = 'Key Points:\n' + data.key_points.map((p, i) => `${i + 1}. ${p}`).join('\n');
+            break;
+        case 'action-items':
+            text = 'Action Items:\n' + data.action_items.map((a, i) => {
+                let item = `${i + 1}. ${a.action}`;
+                if (a.assignee) item += ` (@${a.assignee})`;
+                return item;
+            }).join('\n');
+            break;
+        case 'meeting-notes':
+            text = data.meeting_notes;
+            break;
+        case 'full-analysis':
+            const parts = [];
+            if (data.summary) parts.push(`Summary:\n${data.summary}`);
+            if (data.key_points?.length) parts.push('Key Points:\n' + data.key_points.map((p, i) => `${i + 1}. ${p}`).join('\n'));
+            if (data.action_items?.length) parts.push('Action Items:\n' + data.action_items.map((a, i) => `${i + 1}. ${a.action}${a.assignee ? ` (@${a.assignee})` : ''}`).join('\n'));
+            text = parts.join('\n\n');
+            break;
+        default:
+            text = JSON.stringify(data, null, 2);
+    }
+
+    return text;
+}
+
+/**
+ * Format analysis as Markdown.
+ */
+function formatAnalysisAsMarkdown(action, data) {
+    let md = `# Transcript Analysis\n\n`;
+    md += `*Generated: ${new Date().toLocaleString()}*\n\n`;
+
+    switch (action) {
+        case 'summary':
+            md += `## Summary\n\n${data.summary}\n`;
+            break;
+        case 'key-points':
+            md += `## Key Points\n\n`;
+            data.key_points.forEach((p, i) => {
+                md += `${i + 1}. ${p}\n`;
+            });
+            break;
+        case 'action-items':
+            md += `## Action Items\n\n`;
+            data.action_items.forEach((a, i) => {
+                md += `- [ ] ${a.action}`;
+                if (a.assignee) md += ` *(${a.assignee})*`;
+                md += '\n';
+            });
+            break;
+        case 'meeting-notes':
+            md += data.meeting_notes;
+            break;
+        case 'full-analysis':
+            if (data.summary) {
+                md += `## Summary\n\n${data.summary}\n\n`;
+            }
+            if (data.key_points?.length) {
+                md += `## Key Points\n\n`;
+                data.key_points.forEach((p, i) => {
+                    md += `${i + 1}. ${p}\n`;
+                });
+                md += '\n';
+            }
+            if (data.action_items?.length) {
+                md += `## Action Items\n\n`;
+                data.action_items.forEach(a => {
+                    md += `- [ ] ${a.action}`;
+                    if (a.assignee) md += ` *(${a.assignee})*`;
+                    md += '\n';
+                });
+                md += '\n';
+            }
+            if (data.topics?.length) {
+                md += `## Topics\n\n`;
+                data.topics.forEach(t => {
+                    md += `- **${t.topic}** (${t.relevance})\n`;
+                });
+                md += '\n';
+            }
+            if (data.entities) {
+                const cats = ['people', 'organizations', 'locations', 'dates', 'products'];
+                const hasEntities = cats.some(c => data.entities[c]?.length > 0);
+                if (hasEntities) {
+                    md += `## Entities\n\n`;
+                    cats.forEach(c => {
+                        if (data.entities[c]?.length > 0) {
+                            md += `- **${capitalizeFirst(c)}:** ${data.entities[c].join(', ')}\n`;
+                        }
+                    });
+                }
+            }
+            break;
+        default:
+            md += '```json\n' + JSON.stringify(data, null, 2) + '\n```\n';
+    }
+
+    return md;
 }
 
 // Initialize on DOM ready
