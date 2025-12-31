@@ -649,3 +649,145 @@ async def translate_text(
             status_code=500,
             detail=f"Translation error: {str(e)}",
         )
+
+
+# ============================================================================
+# AI Features Endpoints
+# ============================================================================
+
+@router.get("/ai/providers")
+async def get_ai_providers():
+    """Get available AI providers and their status."""
+    from ..services.ai_provider import AIProviderFactory
+    from config.settings import Settings
+
+    settings = Settings()
+    ai_config = settings.config.get("ai", {})
+
+    available = AIProviderFactory.get_available_providers(ai_config)
+    current_provider = ai_config.get("provider", "claude")
+
+    return {
+        "available_providers": available,
+        "current_provider": current_provider if current_provider in available else None,
+        "providers": {
+            "zai": {
+                "name": "z.ai",
+                "available": "zai" in available,
+                "description": "OpenAI-compatible API endpoint",
+            },
+            "claude": {
+                "name": "Claude (Anthropic)",
+                "available": "claude" in available,
+                "description": "Anthropic Claude API",
+            },
+            "llama": {
+                "name": "Local Llama",
+                "available": "llama" in available,
+                "description": "Local Llama model via llama-cpp-python",
+            },
+        },
+    }
+
+
+@router.post("/ai/cleanup")
+async def cleanup_transcript(
+    transcript: str = Form(...),
+    provider: Optional[str] = Form(default=None),
+):
+    """
+    Clean up a transcript using AI.
+    Removes filler words, fixes punctuation and grammar.
+    """
+    from ..services.ai_provider import AIProviderFactory
+    from ..services.cleanup_service import CleanupService
+    from config.settings import Settings
+
+    settings = Settings()
+    ai_config = settings.config.get("ai", {})
+
+    # Determine which provider to use
+    available = AIProviderFactory.get_available_providers(ai_config)
+    if not available:
+        raise HTTPException(
+            status_code=503,
+            detail="No AI providers available. Configure API keys or local model path.",
+        )
+
+    # Use specified provider or fall back to configured default
+    provider_type = provider or ai_config.get("provider", "claude")
+    if provider_type not in available:
+        # Fall back to first available
+        provider_type = available[0]
+
+    try:
+        # Create provider and service
+        provider_config = ai_config.get(provider_type, {})
+        ai_provider = AIProviderFactory.create(provider_type, provider_config)
+        cleanup_service = CleanupService(ai_provider)
+
+        # Run cleanup
+        result = await cleanup_service.cleanup(transcript)
+        result["provider_used"] = provider_type
+
+        return result
+
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Provider {provider_type} dependencies not installed: {str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Cleanup failed: {str(e)}",
+        )
+
+
+@router.post("/ai/cleanup/diff")
+async def cleanup_transcript_with_diff(
+    transcript: str = Form(...),
+    provider: Optional[str] = Form(default=None),
+):
+    """
+    Clean up a transcript and return a diff-style comparison.
+    """
+    from ..services.ai_provider import AIProviderFactory
+    from ..services.cleanup_service import CleanupService
+    from config.settings import Settings
+
+    settings = Settings()
+    ai_config = settings.config.get("ai", {})
+
+    # Determine which provider to use
+    available = AIProviderFactory.get_available_providers(ai_config)
+    if not available:
+        raise HTTPException(
+            status_code=503,
+            detail="No AI providers available. Configure API keys or local model path.",
+        )
+
+    provider_type = provider or ai_config.get("provider", "claude")
+    if provider_type not in available:
+        provider_type = available[0]
+
+    try:
+        provider_config = ai_config.get(provider_type, {})
+        ai_provider = AIProviderFactory.create(provider_type, provider_config)
+        cleanup_service = CleanupService(ai_provider)
+
+        result = await cleanup_service.cleanup_with_diff(transcript)
+        result["provider_used"] = provider_type
+
+        return result
+
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Provider {provider_type} dependencies not installed: {str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Cleanup failed: {str(e)}",
+        )

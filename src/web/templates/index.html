@@ -176,6 +176,7 @@
         <div class="results-actions">
             <button class="action-btn" id="copy-btn">Copy Text</button>
             <button class="action-btn" id="download-btn">Download</button>
+            <button class="action-btn" id="cleanup-btn">Clean Up</button>
             <button class="action-btn" id="translate-btn">Translate</button>
             <button class="action-btn secondary" id="new-transcription-btn">New Transcription</button>
         </div>
@@ -291,6 +292,50 @@
                 <button class="action-btn secondary" id="translation-modal-cancel">Cancel</button>
                 <button class="action-btn" id="translation-modal-translate">Translate</button>
                 <button class="action-btn" id="translation-modal-copy" hidden>Copy Translation</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Cleanup Modal -->
+    <div class="modal-overlay" id="cleanup-modal" hidden>
+        <div class="modal-content modal-large">
+            <h3 class="modal-title">AI Transcript Cleanup</h3>
+            <div class="modal-body">
+                <p class="cleanup-description">
+                    AI will remove filler words (um, uh, like), fix punctuation, and correct grammar while preserving the original meaning.
+                </p>
+                <div class="cleanup-provider-select">
+                    <label for="cleanup-provider">AI Provider</label>
+                    <select id="cleanup-provider" class="cleanup-select">
+                        <option value="">Auto (use default)</option>
+                    </select>
+                    <span class="provider-status" id="provider-status"></span>
+                </div>
+                <div class="cleanup-progress" id="cleanup-progress" hidden>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="cleanup-progress-fill"></div>
+                    </div>
+                    <p class="progress-text" id="cleanup-progress-text">Processing...</p>
+                </div>
+                <div class="cleanup-result" id="cleanup-result" hidden>
+                    <div class="cleanup-stats" id="cleanup-stats"></div>
+                    <div class="cleanup-tabs">
+                        <button class="cleanup-tab active" data-view="cleaned">Cleaned</button>
+                        <button class="cleanup-tab" data-view="original">Original</button>
+                        <button class="cleanup-tab" data-view="diff">Diff</button>
+                    </div>
+                    <div class="cleanup-output-container">
+                        <div class="cleanup-output" id="cleanup-output-cleaned"></div>
+                        <div class="cleanup-output" id="cleanup-output-original" hidden></div>
+                        <div class="cleanup-output cleanup-diff" id="cleanup-output-diff" hidden></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn secondary" id="cleanup-modal-cancel">Cancel</button>
+                <button class="action-btn" id="cleanup-modal-run">Clean Up</button>
+                <button class="action-btn" id="cleanup-modal-apply" hidden>Apply to Transcript</button>
+                <button class="action-btn secondary" id="cleanup-modal-copy" hidden>Copy Cleaned</button>
             </div>
         </div>
     </div>

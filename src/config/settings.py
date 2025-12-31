@@ -70,6 +70,23 @@ class Settings:
             'enhanced_metadata': False,
             'enhanced_metadata_audio_analysis': True,
             'enhanced_metadata_content_analysis': True
+        },
+        'ai': {
+            'provider': 'claude',  # 'zai', 'claude', or 'llama'
+            'zai': {
+                'api_key': None,  # Set via env: ZAI_API_KEY
+                'base_url': 'https://api.z.ai/v1',
+            },
+            'claude': {
+                'api_key': None,  # Set via env: ANTHROPIC_API_KEY
+                'model': 'claude-sonnet-4-20250514',
+            },
+            'llama': {
+                'model_path': None,  # Path to .gguf model file
+                'n_ctx': 4096,
+            },
+            'semantic_search_enabled': True,
+            'embedding_model': 'all-MiniLM-L6-v2',
         }
     }
     

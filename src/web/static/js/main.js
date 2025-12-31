@@ -27,6 +27,9 @@ let vocabModalElements = {};
 // Translation modal elements
 let translationModalElements = {};
 
+// Cleanup modal elements
+let cleanupModalElements = {};
+
 // DOM Elements
 const elements = {};
 
@@ -182,6 +185,24 @@ function cacheElements() {
     translationModalElements.cancelBtn = document.getElementById('translation-modal-cancel');
     translationModalElements.translateBtn = document.getElementById('translation-modal-translate');
     translationModalElements.copyBtn = document.getElementById('translation-modal-copy');
+
+    // Cleanup elements
+    elements.cleanupBtn = document.getElementById('cleanup-btn');
+    cleanupModalElements.modal = document.getElementById('cleanup-modal');
+    cleanupModalElements.providerSelect = document.getElementById('cleanup-provider');
+    cleanupModalElements.providerStatus = document.getElementById('provider-status');
+    cleanupModalElements.progress = document.getElementById('cleanup-progress');
+    cleanupModalElements.progressFill = document.getElementById('cleanup-progress-fill');
+    cleanupModalElements.progressText = document.getElementById('cleanup-progress-text');
+    cleanupModalElements.result = document.getElementById('cleanup-result');
+    cleanupModalElements.stats = document.getElementById('cleanup-stats');
+    cleanupModalElements.outputCleaned = document.getElementById('cleanup-output-cleaned');
+    cleanupModalElements.outputOriginal = document.getElementById('cleanup-output-original');
+    cleanupModalElements.outputDiff = document.getElementById('cleanup-output-diff');
+    cleanupModalElements.cancelBtn = document.getElementById('cleanup-modal-cancel');
+    cleanupModalElements.runBtn = document.getElementById('cleanup-modal-run');
+    cleanupModalElements.applyBtn = document.getElementById('cleanup-modal-apply');
+    cleanupModalElements.copyBtn = document.getElementById('cleanup-modal-copy');
 }
 
 /**
@@ -319,6 +340,33 @@ function setupEventListeners() {
     if (translationModalElements.modal) {
         translationModalElements.modal.addEventListener('click', (e) => {
             if (e.target === translationModalElements.modal) hideTranslationModal();
+        });
+    }
+
+    // Cleanup events
+    if (elements.cleanupBtn) {
+        elements.cleanupBtn.addEventListener('click', showCleanupModal);
+    }
+    if (cleanupModalElements.cancelBtn) {
+        cleanupModalElements.cancelBtn.addEventListener('click', hideCleanupModal);
+    }
+    if (cleanupModalElements.runBtn) {
+        cleanupModalElements.runBtn.addEventListener('click', performCleanup);
+    }
+    if (cleanupModalElements.applyBtn) {
+        cleanupModalElements.applyBtn.addEventListener('click', applyCleanedTranscript);
+    }
+    if (cleanupModalElements.copyBtn) {
+        cleanupModalElements.copyBtn.addEventListener('click', copyCleanedTranscript);
+    }
+    if (cleanupModalElements.modal) {
+        cleanupModalElements.modal.addEventListener('click', (e) => {
+            if (e.target === cleanupModalElements.modal) hideCleanupModal();
+        });
+        // Tab switching
+        const tabs = cleanupModalElements.modal.querySelectorAll('.cleanup-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => switchCleanupTab(tab.dataset.view));
         });
     }
 }
@@ -1204,6 +1252,332 @@ async function copyTranslation() {
     } catch (err) {
         showError('Failed to copy to clipboard');
     }
+}
+
+// ============================================================================
+// AI Cleanup Functions
+// ============================================================================
+
+// Store current cleanup result
+let currentCleanupResult = null;
+
+/**
+ * Show cleanup modal and load available providers.
+ */
+async function showCleanupModal() {
+    if (!AppState.result?.text) {
+        showError('No transcript to clean up');
+        return;
+    }
+
+    // Reset modal state
+    cleanupModalElements.progress.hidden = true;
+    cleanupModalElements.result.hidden = true;
+    cleanupModalElements.runBtn.hidden = false;
+    cleanupModalElements.applyBtn.hidden = true;
+    cleanupModalElements.copyBtn.hidden = true;
+    cleanupModalElements.runBtn.disabled = false;
+    currentCleanupResult = null;
+
+    // Load available providers
+    try {
+        const response = await fetch('/api/ai/providers');
+        if (response.ok) {
+            const data = await response.json();
+            populateProviderSelect(data);
+        } else {
+            cleanupModalElements.providerStatus.textContent = 'Failed to load providers';
+            cleanupModalElements.providerStatus.className = 'provider-status error';
+        }
+    } catch (err) {
+        console.error('Failed to load AI providers:', err);
+        cleanupModalElements.providerStatus.textContent = 'No providers available';
+        cleanupModalElements.providerStatus.className = 'provider-status error';
+    }
+
+    cleanupModalElements.modal.hidden = false;
+}
+
+/**
+ * Populate provider select dropdown.
+ */
+function populateProviderSelect(data) {
+    const select = cleanupModalElements.providerSelect;
+    select.innerHTML = '<option value="">Auto (use default)</option>';
+
+    const providers = data.providers || {};
+    const available = data.available_providers || [];
+
+    Object.entries(providers).forEach(([key, info]) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = info.name;
+        option.disabled = !info.available;
+        if (!info.available) {
+            option.textContent += ' (not configured)';
+        }
+        select.appendChild(option);
+    });
+
+    // Update status
+    if (available.length > 0) {
+        cleanupModalElements.providerStatus.textContent = `${available.length} provider(s) available`;
+        cleanupModalElements.providerStatus.className = 'provider-status success';
+    } else {
+        cleanupModalElements.providerStatus.textContent = 'No providers configured';
+        cleanupModalElements.providerStatus.className = 'provider-status error';
+        cleanupModalElements.runBtn.disabled = true;
+    }
+}
+
+/**
+ * Hide cleanup modal.
+ */
+function hideCleanupModal() {
+    cleanupModalElements.modal.hidden = true;
+}
+
+/**
+ * Perform AI cleanup on the transcript.
+ */
+async function performCleanup() {
+    if (!AppState.result?.text) {
+        showError('No transcript to clean up');
+        return;
+    }
+
+    const provider = cleanupModalElements.providerSelect.value;
+
+    // Show progress
+    cleanupModalElements.progress.hidden = false;
+    cleanupModalElements.result.hidden = true;
+    cleanupModalElements.runBtn.disabled = true;
+    cleanupModalElements.progressFill.style.width = '30%';
+    cleanupModalElements.progressText.textContent = 'Sending to AI...';
+
+    try {
+        cleanupModalElements.progressFill.style.width = '50%';
+        cleanupModalElements.progressText.textContent = 'Processing transcript...';
+
+        const formData = new FormData();
+        formData.append('transcript', AppState.result.text);
+        if (provider) {
+            formData.append('provider', provider);
+        }
+
+        const response = await fetch('/api/ai/cleanup', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Cleanup failed');
+        }
+
+        const data = await response.json();
+        currentCleanupResult = data;
+
+        cleanupModalElements.progressFill.style.width = '100%';
+        cleanupModalElements.progressText.textContent = 'Cleanup complete!';
+
+        // Show result
+        displayCleanupResult(data);
+
+        // Hide progress after a moment
+        setTimeout(() => {
+            cleanupModalElements.progress.hidden = true;
+        }, 1000);
+
+    } catch (error) {
+        showError(error.message);
+        cleanupModalElements.progress.hidden = true;
+    } finally {
+        cleanupModalElements.runBtn.disabled = false;
+    }
+}
+
+/**
+ * Display cleanup result in the modal.
+ */
+function displayCleanupResult(data) {
+    // Update stats
+    const stats = cleanupModalElements.stats;
+    const wordsRemoved = data.word_count_original - data.word_count_cleaned;
+    const percentReduced = data.word_count_original > 0
+        ? Math.round((wordsRemoved / data.word_count_original) * 100)
+        : 0;
+
+    stats.innerHTML = `
+        <span class="stat">Filler words removed: <strong>${data.filler_words_removed}</strong></span>
+        <span class="stat">Words: ${data.word_count_original} → ${data.word_count_cleaned}</span>
+        <span class="stat">Reduced by: ${percentReduced}%</span>
+        <span class="stat provider-used">Provider: ${data.provider_used || 'unknown'}</span>
+    `;
+
+    // Display cleaned text
+    cleanupModalElements.outputCleaned.textContent = data.cleaned;
+
+    // Display original text
+    cleanupModalElements.outputOriginal.textContent = data.original;
+
+    // Generate diff view
+    generateDiffView(data.original, data.cleaned);
+
+    // Show result panel and buttons
+    cleanupModalElements.result.hidden = false;
+    cleanupModalElements.runBtn.hidden = true;
+    cleanupModalElements.applyBtn.hidden = false;
+    cleanupModalElements.copyBtn.hidden = false;
+
+    // Reset to cleaned tab
+    switchCleanupTab('cleaned');
+}
+
+/**
+ * Generate a visual diff between original and cleaned text.
+ */
+function generateDiffView(original, cleaned) {
+    const originalWords = original.split(/\s+/);
+    const cleanedWords = cleaned.split(/\s+/);
+
+    // Simple word-level diff visualization
+    const diffContainer = cleanupModalElements.outputDiff;
+    diffContainer.innerHTML = '';
+
+    // Use a simple LCS-based diff approach
+    const diff = computeWordDiff(originalWords, cleanedWords);
+
+    diff.forEach(item => {
+        const span = document.createElement('span');
+        span.className = `diff-${item.type}`;
+        span.textContent = item.text + ' ';
+        diffContainer.appendChild(span);
+    });
+}
+
+/**
+ * Compute word-level diff between two arrays of words.
+ */
+function computeWordDiff(original, cleaned) {
+    const result = [];
+    let i = 0;
+    let j = 0;
+
+    // Common filler words that are likely removed
+    const fillerWords = new Set([
+        'um', 'uh', 'umm', 'uhh', 'like', 'basically', 'actually',
+        'literally', 'you', 'know', 'i', 'mean', 'so', 'kind', 'of', 'sort'
+    ]);
+
+    while (i < original.length || j < cleaned.length) {
+        if (i >= original.length) {
+            // Remaining cleaned words are additions
+            result.push({ type: 'added', text: cleaned[j] });
+            j++;
+        } else if (j >= cleaned.length) {
+            // Remaining original words are removals
+            result.push({ type: 'removed', text: original[i] });
+            i++;
+        } else {
+            const origWord = original[i].toLowerCase().replace(/[.,!?;:]/g, '');
+            const cleanWord = cleaned[j].toLowerCase().replace(/[.,!?;:]/g, '');
+
+            if (origWord === cleanWord) {
+                result.push({ type: 'same', text: original[i] });
+                i++;
+                j++;
+            } else if (fillerWords.has(origWord)) {
+                result.push({ type: 'removed', text: original[i] });
+                i++;
+            } else {
+                // Look ahead to see if this is a modification or removal
+                let foundLater = false;
+                for (let k = j; k < Math.min(j + 5, cleaned.length); k++) {
+                    if (cleaned[k].toLowerCase().replace(/[.,!?;:]/g, '') === origWord) {
+                        foundLater = true;
+                        break;
+                    }
+                }
+
+                if (foundLater) {
+                    // Word appears later, so current clean word is new
+                    result.push({ type: 'added', text: cleaned[j] });
+                    j++;
+                } else {
+                    // Word was removed or changed
+                    result.push({ type: 'removed', text: original[i] });
+                    i++;
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
+/**
+ * Switch between cleanup view tabs.
+ */
+function switchCleanupTab(view) {
+    // Update tab buttons
+    const tabs = cleanupModalElements.modal.querySelectorAll('.cleanup-tab');
+    tabs.forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.view === view);
+    });
+
+    // Show/hide outputs
+    cleanupModalElements.outputCleaned.hidden = view !== 'cleaned';
+    cleanupModalElements.outputOriginal.hidden = view !== 'original';
+    cleanupModalElements.outputDiff.hidden = view !== 'diff';
+}
+
+/**
+ * Apply cleaned transcript to the main result.
+ */
+function applyCleanedTranscript() {
+    if (!currentCleanupResult || !AppState.result) return;
+
+    // Update the result text
+    AppState.result.text = currentCleanupResult.cleaned;
+
+    // Re-render the transcript display
+    elements.transcriptText.textContent = currentCleanupResult.cleaned;
+
+    // Close the modal
+    hideCleanupModal();
+
+    // Show confirmation
+    showTemporaryMessage('Cleaned transcript applied!');
+}
+
+/**
+ * Copy cleaned transcript to clipboard.
+ */
+async function copyCleanedTranscript() {
+    if (!currentCleanupResult?.cleaned) return;
+
+    try {
+        await navigator.clipboard.writeText(currentCleanupResult.cleaned);
+        cleanupModalElements.copyBtn.textContent = 'Copied!';
+        setTimeout(() => {
+            cleanupModalElements.copyBtn.textContent = 'Copy Cleaned';
+        }, 2000);
+    } catch (err) {
+        showError('Failed to copy to clipboard');
+    }
+}
+
+/**
+ * Show a temporary message (toast-like notification).
+ */
+function showTemporaryMessage(message) {
+    // Use the copy button approach
+    const originalText = elements.copyBtn.textContent;
+    elements.copyBtn.textContent = message;
+    setTimeout(() => {
+        elements.copyBtn.textContent = originalText;
+    }, 2000);
 }
 
 // Initialize on DOM ready

@@ -54,6 +54,11 @@ yt-dlp>=2024.1.0
 # Translation (offline local models)
 argostranslate>=1.9.0
 
+# AI Features (Phase 5 - Smart Cleanup, Summarization, MCP)
+openai>=1.0.0              # For z.ai (OpenAI-compatible) and other OpenAI-compatible APIs
+anthropic>=0.25.0          # For Claude API
+llama-cpp-python>=0.2.0    # For local Llama models (optional, requires build)
+
 # Development/Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0
