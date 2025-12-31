@@ -17,7 +17,18 @@
             <input type="text" id="search-input" placeholder="Search transcriptions..." autocomplete="off">
             <button class="search-btn" id="search-btn">Search</button>
         </div>
+        <div class="search-mode-toggle" id="search-mode-toggle">
+            <button class="mode-toggle-btn active" data-mode="keyword">Keyword</button>
+            <button class="mode-toggle-btn" data-mode="semantic">Semantic</button>
+        </div>
+        <button class="reindex-btn" id="reindex-btn" title="Reindex all transcripts for semantic search">Reindex</button>
         <button class="clear-btn" id="clear-history-btn">Clear All</button>
+    </div>
+
+    <!-- Semantic Search Status -->
+    <div class="semantic-status" id="semantic-status" hidden>
+        <span class="status-indicator" id="semantic-indicator"></span>
+        <span id="semantic-status-text"></span>
     </div>
 
     <div class="history-list" id="history-list">

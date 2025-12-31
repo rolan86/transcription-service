@@ -11,6 +11,8 @@
     let isSearchMode = false;
     let currentSearchQuery = '';
     let currentEntryId = null;
+    let searchMode = 'keyword'; // 'keyword' or 'semantic'
+    let semanticAvailable = false;
 
     // DOM Elements
     const elements = {
@@ -35,6 +37,12 @@
         confirmModal: document.getElementById('confirm-modal'),
         confirmCancel: document.getElementById('confirm-cancel'),
         confirmClear: document.getElementById('confirm-clear'),
+        // Semantic search elements
+        searchModeToggle: document.getElementById('search-mode-toggle'),
+        reindexBtn: document.getElementById('reindex-btn'),
+        semanticStatus: document.getElementById('semantic-status'),
+        semanticIndicator: document.getElementById('semantic-indicator'),
+        semanticStatusText: document.getElementById('semantic-status-text'),
     };
 
     // Initialize
@@ -45,6 +53,7 @@
         loadStats();
         loadHistory();
         bindEvents();
+        checkSemanticSearchStatus();
     }
 
     function initTheme() {
@@ -102,6 +111,16 @@
         elements.confirmModal.addEventListener('click', (e) => {
             if (e.target === elements.confirmModal) hideConfirmModal();
         });
+
+        // Semantic search events
+        if (elements.searchModeToggle) {
+            elements.searchModeToggle.querySelectorAll('.mode-toggle-btn').forEach(btn => {
+                btn.addEventListener('click', () => setSearchMode(btn.dataset.mode));
+            });
+        }
+        if (elements.reindexBtn) {
+            elements.reindexBtn.addEventListener('click', reindexAll);
+        }
     }
 
     async function loadStats() {
@@ -152,12 +171,25 @@
         showLoading();
 
         try {
-            const response = await fetch(`/api/history/search?q=${encodeURIComponent(query)}&limit=50`);
-            if (!response.ok) throw new Error('Search failed');
-            const data = await response.json();
+            let response, data;
 
-            totalEntries = data.count;
-            renderHistoryList(data.entries, query);
+            if (searchMode === 'semantic' && semanticAvailable) {
+                // Semantic search
+                response = await fetch(`/api/semantic-search?q=${encodeURIComponent(query)}&limit=50`);
+                if (!response.ok) throw new Error('Semantic search failed');
+                data = await response.json();
+
+                totalEntries = data.count;
+                renderSemanticResults(data.results, query);
+            } else {
+                // Keyword search
+                response = await fetch(`/api/history/search?q=${encodeURIComponent(query)}&limit=50`);
+                if (!response.ok) throw new Error('Search failed');
+                data = await response.json();
+
+                totalEntries = data.count;
+                renderHistoryList(data.entries, query);
+            }
             elements.pagination.hidden = true;
         } catch (error) {
             console.error('Error searching:', error);
@@ -372,5 +404,155 @@
 
     function escapeRegExp(string) {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // ========================================================================
+    // Semantic Search Functions
+    // ========================================================================
+
+    async function checkSemanticSearchStatus() {
+        try {
+            const response = await fetch('/api/semantic-search/status');
+            const data = await response.json();
+
+            semanticAvailable = data.available;
+
+            if (elements.semanticStatus) {
+                elements.semanticStatus.hidden = false;
+                elements.semanticIndicator.className = 'status-indicator ' + (data.available ? 'available' : 'unavailable');
+
+                if (data.available) {
+                    elements.semanticStatusText.textContent = `Semantic search: ${data.indexed_transcripts} indexed (${data.total_chunks} chunks)`;
+                } else {
+                    elements.semanticStatusText.textContent = `Semantic search unavailable: ${data.error || 'Unknown error'}`;
+                }
+            }
+
+            // Disable semantic mode button if not available
+            if (!semanticAvailable && elements.searchModeToggle) {
+                const semanticBtn = elements.searchModeToggle.querySelector('[data-mode="semantic"]');
+                if (semanticBtn) {
+                    semanticBtn.disabled = true;
+                    semanticBtn.title = 'Semantic search not available';
+                }
+            }
+        } catch (error) {
+            console.error('Error checking semantic search status:', error);
+            semanticAvailable = false;
+        }
+    }
+
+    function setSearchMode(mode) {
+        if (mode === 'semantic' && !semanticAvailable) {
+            alert('Semantic search is not available. Install sentence-transformers and reindex.');
+            return;
+        }
+
+        searchMode = mode;
+
+        // Update toggle buttons
+        if (elements.searchModeToggle) {
+            elements.searchModeToggle.querySelectorAll('.mode-toggle-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mode === mode);
+            });
+        }
+
+        // Update placeholder text
+        if (elements.searchInput) {
+            elements.searchInput.placeholder = mode === 'semantic'
+                ? 'Search by meaning...'
+                : 'Search transcriptions...';
+        }
+
+        // Re-run search if there's a query
+        if (isSearchMode && currentSearchQuery) {
+            performSearch();
+        }
+    }
+
+    function renderSemanticResults(results, query) {
+        elements.loading.hidden = true;
+
+        if (results.length === 0) {
+            elements.historyList.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">&#128270;</div>
+                    <p>No semantically similar transcripts found</p>
+                    <p class="empty-hint">Try a different search query or reindex your transcripts</p>
+                </div>
+            `;
+            return;
+        }
+
+        const html = results.map(result => {
+            const similarity = Math.round(result.similarity * 100);
+            const similarityClass = similarity >= 70 ? 'high' : similarity >= 50 ? 'medium' : 'low';
+
+            const date = new Date(result.created_at);
+            const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+            // Truncate chunk text for preview
+            let preview = escapeHtml(result.chunk_text || '');
+            if (preview.length > 200) {
+                preview = preview.substring(0, 200) + '...';
+            }
+
+            return `
+                <div class="history-entry" data-id="${result.history_id}">
+                    <div class="entry-header">
+                        <span class="entry-filename">${escapeHtml(result.filename)}</span>
+                        <span class="similarity-badge ${similarityClass}">${similarity}% match</span>
+                        <span class="entry-date">${dateStr}</span>
+                    </div>
+                    <div class="entry-preview">${preview}</div>
+                    <div class="entry-footer">
+                        ${result.language ? `<span class="entry-stat">${result.language.toUpperCase()}</span>` : ''}
+                        ${result.duration ? `<span class="entry-stat">${Math.round(result.duration)}s</span>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        elements.historyList.innerHTML = html;
+
+        // Bind click events to entries
+        elements.historyList.querySelectorAll('.history-entry').forEach(el => {
+            el.addEventListener('click', () => showEntryDetail(parseInt(el.dataset.id)));
+        });
+    }
+
+    async function reindexAll() {
+        if (!confirm('This will reindex all transcripts for semantic search. This may take a while for large histories. Continue?')) {
+            return;
+        }
+
+        if (elements.reindexBtn) {
+            elements.reindexBtn.disabled = true;
+            elements.reindexBtn.textContent = 'Reindexing...';
+        }
+
+        if (elements.semanticIndicator) {
+            elements.semanticIndicator.className = 'status-indicator indexing';
+        }
+        if (elements.semanticStatusText) {
+            elements.semanticStatusText.textContent = 'Reindexing all transcripts...';
+        }
+
+        try {
+            const response = await fetch('/api/semantic-search/reindex', { method: 'POST' });
+            if (!response.ok) throw new Error('Reindex failed');
+            const data = await response.json();
+
+            alert(`Reindexing complete! Indexed: ${data.indexed}, Failed: ${data.failed}`);
+            checkSemanticSearchStatus();
+        } catch (error) {
+            console.error('Error reindexing:', error);
+            alert('Reindexing failed: ' + error.message);
+        } finally {
+            if (elements.reindexBtn) {
+                elements.reindexBtn.disabled = false;
+                elements.reindexBtn.textContent = 'Reindex';
+            }
+        }
     }
 })();

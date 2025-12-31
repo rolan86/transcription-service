@@ -1011,3 +1011,159 @@ async def generate_meeting_notes(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Meeting notes generation failed: {str(e)}")
+
+
+# ============================================================================
+# Semantic Search Endpoints
+# ============================================================================
+
+@router.get("/semantic-search/status")
+async def get_semantic_search_status():
+    """Check if semantic search is available and get indexing stats."""
+    try:
+        from src.web.services.semantic_search import SemanticSearchService
+        from src.web.services.embedding_service import is_available
+
+        if not is_available():
+            return {
+                "available": False,
+                "error": "sentence-transformers not installed",
+                "indexed_transcripts": 0,
+                "total_chunks": 0,
+            }
+
+        service = SemanticSearchService()
+        return {
+            "available": True,
+            "indexed_transcripts": service.get_indexed_count(),
+            "total_chunks": service.get_total_chunks(),
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "error": str(e),
+            "indexed_transcripts": 0,
+            "total_chunks": 0,
+        }
+
+
+@router.get("/semantic-search")
+async def semantic_search(
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(default=10, ge=1, le=50),
+    min_similarity: float = Query(default=0.3, ge=0.0, le=1.0),
+):
+    """
+    Search transcripts by semantic similarity.
+    Returns transcripts that are semantically similar to the query,
+    even if they don't contain the exact words.
+    """
+    try:
+        from src.web.services.semantic_search import SemanticSearchService
+        from src.web.services.embedding_service import is_available
+
+        if not is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Semantic search not available. Install sentence-transformers."
+            )
+
+        service = SemanticSearchService()
+        results = service.search(q, limit=limit, min_similarity=min_similarity)
+
+        return {
+            "query": q,
+            "results": results,
+            "count": len(results),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Semantic search failed: {str(e)}")
+
+
+@router.post("/semantic-search/index/{history_id}")
+async def index_transcript(history_id: int):
+    """Index a specific transcript for semantic search."""
+    try:
+        from src.web.services.semantic_search import SemanticSearchService
+        from src.web.services.history_manager import HistoryManager
+        from src.web.services.embedding_service import is_available
+
+        if not is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Semantic search not available. Install sentence-transformers."
+            )
+
+        # Get the transcript
+        manager = HistoryManager()
+        entry = manager.get_entry(history_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail=f"Transcript {history_id} not found")
+
+        transcript_text = entry.get('transcript_text', '')
+        if not transcript_text:
+            raise HTTPException(status_code=400, detail="Transcript has no text to index")
+
+        # Index it
+        service = SemanticSearchService()
+        success = service.index_transcript(history_id, transcript_text)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to index transcript")
+
+        return {
+            "success": True,
+            "message": f"Transcript {history_id} indexed successfully",
+            "history_id": history_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Indexing failed: {str(e)}")
+
+
+@router.post("/semantic-search/reindex")
+async def reindex_all_transcripts():
+    """Reindex all transcripts for semantic search."""
+    try:
+        from src.web.services.semantic_search import SemanticSearchService
+        from src.web.services.embedding_service import is_available
+
+        if not is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Semantic search not available. Install sentence-transformers."
+            )
+
+        service = SemanticSearchService()
+        results = service.reindex_all()
+
+        return {
+            "success": True,
+            "message": "Reindexing complete",
+            "indexed": results['success'],
+            "failed": results['failed'],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Reindexing failed: {str(e)}")
+
+
+@router.delete("/semantic-search/index/{history_id}")
+async def delete_transcript_index(history_id: int):
+    """Delete semantic search index for a transcript."""
+    try:
+        from src.web.services.semantic_search import SemanticSearchService
+
+        service = SemanticSearchService()
+        service.delete_index(history_id)
+
+        return {
+            "success": True,
+            "message": f"Index deleted for transcript {history_id}",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")

@@ -62,6 +62,9 @@ llama-cpp-python>=0.2.0    # For local Llama models (optional, requires build)
 # MCP (Model Context Protocol) Server
 mcp>=1.2.0                 # MCP SDK for exposing tools to AI agents
 
+# Semantic Search (Phase 4)
+sentence-transformers>=2.2.0  # Local embeddings for semantic search
+
 # Development/Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0
