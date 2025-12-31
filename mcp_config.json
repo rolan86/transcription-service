@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "transcription-service": {
+      "command": "python",
+      "args": ["-m", "src.mcp.server"],
+      "env": {
+        "PYTHONPATH": "."
+      }
+    }
+  }
+}

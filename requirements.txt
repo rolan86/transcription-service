@@ -59,6 +59,9 @@ openai>=1.0.0              # For z.ai (OpenAI-compatible) and other OpenAI-compa
 anthropic>=0.25.0          # For Claude API
 llama-cpp-python>=0.2.0    # For local Llama models (optional, requires build)
 
+# MCP (Model Context Protocol) Server
+mcp>=1.2.0                 # MCP SDK for exposing tools to AI agents
+
 # Development/Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0
