@@ -25,6 +25,15 @@
         <button class="clear-btn" id="clear-history-btn">Clear All</button>
     </div>
 
+    <!-- Batch Actions Bar (hidden by default) -->
+    <div class="batch-actions" id="batch-actions" hidden>
+        <span class="batch-count" id="batch-count">0 selected</span>
+        <button class="action-btn secondary" id="batch-select-all">Select All</button>
+        <button class="action-btn" id="batch-export">Export Selected</button>
+        <button class="action-btn danger" id="batch-delete">Delete Selected</button>
+        <button class="action-btn secondary" id="batch-cancel">Cancel</button>
+    </div>
+
     <!-- Semantic Search Status -->
     <div class="semantic-status" id="semantic-status" hidden>
         <span class="status-indicator" id="semantic-indicator"></span>
@@ -49,11 +58,29 @@
                 <button class="modal-close" id="entry-modal-close">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="entry-meta" id="entry-meta"></div>
-                <div class="entry-transcript" id="entry-transcript"></div>
+                <!-- Tab Navigation -->
+                <div class="detail-tabs">
+                    <button class="detail-tab active" data-tab="transcript">Transcript</button>
+                    <button class="detail-tab" data-tab="metadata">Metadata</button>
+                    <button class="detail-tab" data-tab="analysis">Analysis</button>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="tab-content" id="tab-transcript">
+                    <div class="entry-transcript" id="entry-transcript"></div>
+                </div>
+                <div class="tab-content" id="tab-metadata" hidden>
+                    <div class="entry-meta" id="entry-meta"></div>
+                </div>
+                <div class="tab-content" id="tab-analysis" hidden>
+                    <div class="entry-analysis" id="entry-analysis">
+                        <p class="no-analysis">No analysis available for this transcription.</p>
+                    </div>
+                </div>
             </div>
             <div class="modal-actions">
                 <button class="action-btn secondary" id="entry-delete-btn">Delete</button>
+                <button class="action-btn secondary" id="entry-export-btn">Export</button>
                 <button class="action-btn" id="entry-copy-btn">Copy Text</button>
             </div>
         </div>

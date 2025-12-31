@@ -205,6 +205,10 @@ function cacheElements() {
     elements.resultTime = document.getElementById('result-time');
     elements.copyBtn = document.getElementById('copy-btn');
     elements.downloadBtn = document.getElementById('download-btn');
+    elements.exportBtn = document.getElementById('export-btn');
+    elements.exportMenu = document.getElementById('export-menu');
+    elements.speakerLegend = document.getElementById('speaker-legend');
+    elements.legendItems = document.getElementById('legend-items');
     elements.newTranscriptionBtn = document.getElementById('new-transcription-btn');
     elements.errorContainer = document.getElementById('error-container');
     elements.errorMessage = document.getElementById('error-message');
@@ -342,7 +346,23 @@ function setupEventListeners() {
 
     // Result actions
     elements.copyBtn.addEventListener('click', copyTranscript);
-    elements.downloadBtn.addEventListener('click', downloadTranscript);
+    if (elements.downloadBtn) {
+        elements.downloadBtn.addEventListener('click', downloadTranscript);
+    }
+
+    // Export menu
+    if (elements.exportBtn) {
+        elements.exportBtn.addEventListener('click', toggleExportMenu);
+    }
+    if (elements.exportMenu) {
+        const items = elements.exportMenu.querySelectorAll('.dropdown-item');
+        items.forEach(item => {
+            item.addEventListener('click', () => {
+                hideExportMenu();
+                exportTranscript(item.dataset.format);
+            });
+        });
+    }
     elements.newTranscriptionBtn.addEventListener('click', resetApp);
 
     // Error dismiss
@@ -487,14 +507,38 @@ function setupEventListeners() {
     if (analysisElements.exportBtn) {
         analysisElements.exportBtn.addEventListener('click', exportAnalysisResults);
     }
-    // Close menu when clicking outside
+    // Close menus when clicking outside
     document.addEventListener('click', (e) => {
         if (elements.analyzeMenu && !elements.analyzeMenu.hidden) {
             if (!elements.analyzeBtn.contains(e.target) && !elements.analyzeMenu.contains(e.target)) {
                 hideAnalyzeMenu();
             }
         }
+        if (elements.exportMenu && !elements.exportMenu.hidden) {
+            if (!elements.exportBtn.contains(e.target) && !elements.exportMenu.contains(e.target)) {
+                hideExportMenu();
+            }
+        }
     });
+
+    // Accordion panel events
+    setupAccordionPanels();
+
+    // Quick preset events
+    setupPresetButtons();
+
+    // Update summaries when settings change
+    elements.modelSelect?.addEventListener('change', updateAccordionSummaries);
+    elements.languageSelect?.addEventListener('change', updateAccordionSummaries);
+    elements.formatSelect?.addEventListener('change', updateAccordionSummaries);
+    elements.enableSpeakers?.addEventListener('change', updateAccordionSummaries);
+    elements.useVocabulary?.addEventListener('change', updateAccordionSummaries);
+
+    // Initial summary update
+    updateAccordionSummaries();
+
+    // Check speaker detection availability
+    checkSpeakerDetectionStatus();
 }
 
 /**
@@ -559,6 +603,9 @@ function showResults(result) {
 
     // Show/hide rename speakers button
     elements.renameSpeakersBtn.hidden = !hasSpeakers;
+
+    // Update speaker legend
+    updateSpeakerLegend(hasSpeakers ? result.speaker_detection.speakers : []);
 
     // Determine how to display transcript
     const hasSegments = result.segments && result.segments.length > 0;
@@ -790,6 +837,9 @@ function applySpeakerRenames() {
  */
 function hideResults() {
     elements.resultsContainer.hidden = true;
+    if (elements.speakerLegend) {
+        elements.speakerLegend.hidden = true;
+    }
     AppState.result = null;
 }
 
@@ -1738,6 +1788,170 @@ function hideAnalyzeMenu() {
 }
 
 /**
+ * Toggle the export dropdown menu.
+ */
+function toggleExportMenu() {
+    if (elements.exportMenu) {
+        elements.exportMenu.hidden = !elements.exportMenu.hidden;
+        // Close analyze menu if open
+        if (elements.analyzeMenu) {
+            elements.analyzeMenu.hidden = true;
+        }
+    }
+}
+
+/**
+ * Hide the export dropdown menu.
+ */
+function hideExportMenu() {
+    if (elements.exportMenu) {
+        elements.exportMenu.hidden = true;
+    }
+}
+
+/**
+ * Export transcript in the specified format.
+ */
+function exportTranscript(format) {
+    if (!AppState.result) {
+        showError('No transcript to export');
+        return;
+    }
+
+    let content = '';
+    let filename = 'transcript';
+    let mimeType = 'text/plain';
+
+    switch (format) {
+        case 'txt':
+            content = AppState.result.text || '';
+            filename += '.txt';
+            break;
+
+        case 'json':
+            content = JSON.stringify(AppState.result, null, 2);
+            filename += '.json';
+            mimeType = 'application/json';
+            break;
+
+        case 'srt':
+            content = generateSRT(AppState.result);
+            filename += '.srt';
+            break;
+
+        case 'vtt':
+            content = generateVTT(AppState.result);
+            filename += '.vtt';
+            mimeType = 'text/vtt';
+            break;
+
+        case 'md':
+            content = generateMarkdown(AppState.result);
+            filename += '.md';
+            mimeType = 'text/markdown';
+            break;
+
+        default:
+            content = AppState.result.text || '';
+            filename += '.txt';
+    }
+
+    downloadFile(content, filename, mimeType);
+}
+
+/**
+ * Generate SRT format from result.
+ */
+function generateSRT(result) {
+    if (!result.segments || result.segments.length === 0) {
+        return result.text || '';
+    }
+
+    return result.segments.map((seg, i) => {
+        const start = formatSRTTime(seg.start);
+        const end = formatSRTTime(seg.end);
+        return `${i + 1}\n${start} --> ${end}\n${seg.text.trim()}\n`;
+    }).join('\n');
+}
+
+/**
+ * Generate VTT format from result.
+ */
+function generateVTT(result) {
+    if (!result.segments || result.segments.length === 0) {
+        return `WEBVTT\n\n${result.text || ''}`;
+    }
+
+    const cues = result.segments.map(seg => {
+        const start = formatVTTTime(seg.start);
+        const end = formatVTTTime(seg.end);
+        return `${start} --> ${end}\n${seg.text.trim()}`;
+    }).join('\n\n');
+
+    return `WEBVTT\n\n${cues}`;
+}
+
+/**
+ * Generate Markdown format from result.
+ */
+function generateMarkdown(result) {
+    let md = '# Transcription\n\n';
+
+    if (result.language) {
+        md += `**Language:** ${result.language}\n\n`;
+    }
+
+    if (result.speakers && result.speakers.length > 0) {
+        md += '## Transcript\n\n';
+        result.segments?.forEach(seg => {
+            const speaker = seg.speaker ? `**${AppState.speakerNames[seg.speaker] || seg.speaker}:** ` : '';
+            md += `${speaker}${seg.text.trim()}\n\n`;
+        });
+    } else {
+        md += result.text || '';
+    }
+
+    return md;
+}
+
+/**
+ * Format time for SRT (HH:MM:SS,mmm).
+ */
+function formatSRTTime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    const ms = Math.round((seconds % 1) * 1000);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+}
+
+/**
+ * Format time for VTT (HH:MM:SS.mmm).
+ */
+function formatVTTTime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    const ms = Math.round((seconds % 1) * 1000);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+}
+
+/**
+ * Download a file with the given content.
+ */
+function downloadFile(content, filename, mimeType = 'text/plain') {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+/**
  * Run analysis based on the selected action.
  */
 async function runAnalysis(action) {
@@ -2173,6 +2387,227 @@ function formatAnalysisAsMarkdown(action, data) {
     }
 
     return md;
+}
+
+// ==========================================
+// Accordion Panel Functions
+// ==========================================
+
+/**
+ * Set up accordion panel toggle behavior.
+ */
+function setupAccordionPanels() {
+    const panels = document.querySelectorAll('.accordion-panel');
+    panels.forEach(panel => {
+        const header = panel.querySelector('.accordion-header');
+        if (header) {
+            header.addEventListener('click', (e) => {
+                // Don't toggle if clicking on a button inside the panel
+                if (e.target.closest('button:not(.accordion-header)')) {
+                    return;
+                }
+                toggleAccordionPanel(panel);
+            });
+        }
+    });
+}
+
+/**
+ * Toggle an accordion panel open/closed.
+ */
+function toggleAccordionPanel(panel) {
+    const isOpen = panel.classList.contains('open');
+
+    // Close all panels
+    document.querySelectorAll('.accordion-panel').forEach(p => {
+        p.classList.remove('open');
+    });
+
+    // Open clicked panel if it was closed
+    if (!isOpen) {
+        panel.classList.add('open');
+    }
+}
+
+/**
+ * Update accordion summary text based on current settings.
+ */
+function updateAccordionSummaries() {
+    // Model & Language summary
+    const modelSummary = document.getElementById('model-summary');
+    if (modelSummary && elements.modelSelect && elements.languageSelect) {
+        const modelText = elements.modelSelect.options[elements.modelSelect.selectedIndex]?.text.split(' ')[0] || 'Base';
+        const langText = elements.languageSelect.value ?
+            elements.languageSelect.options[elements.languageSelect.selectedIndex]?.text : 'Auto-detect';
+        modelSummary.textContent = `${modelText}, ${langText}`;
+    }
+
+    // Enhancements summary
+    const enhancementsSummary = document.getElementById('enhancements-summary');
+    if (enhancementsSummary) {
+        const active = [];
+        if (elements.enableSpeakers?.checked) active.push('Speakers');
+        if (elements.useVocabulary?.checked) active.push('Vocabulary');
+        enhancementsSummary.textContent = active.length > 0 ? active.join(', ') : 'None active';
+    }
+
+    // Output summary
+    const outputSummary = document.getElementById('output-summary');
+    if (outputSummary && elements.formatSelect) {
+        const formatText = elements.formatSelect.options[elements.formatSelect.selectedIndex]?.text.split(' ')[0] || 'JSON';
+        outputSummary.textContent = formatText;
+    }
+
+    // Update active features display
+    updateActiveFeaturesDisplay();
+}
+
+/**
+ * Update the active features chip display.
+ */
+function updateActiveFeaturesDisplay() {
+    const container = document.getElementById('active-features');
+    if (!container) return;
+
+    const chips = [];
+
+    // Check if using non-default model
+    if (elements.modelSelect?.value && elements.modelSelect.value !== 'base') {
+        const modelName = elements.modelSelect.options[elements.modelSelect.selectedIndex]?.text.split(' ')[0];
+        chips.push(`<span class="feature-chip model"><span class="chip-icon">&#9881;</span> ${modelName}</span>`);
+    }
+
+    // Check if language is set (not auto-detect)
+    if (elements.languageSelect?.value) {
+        const langName = elements.languageSelect.options[elements.languageSelect.selectedIndex]?.text;
+        chips.push(`<span class="feature-chip language"><span class="chip-icon">&#127760;</span> ${langName}</span>`);
+    }
+
+    // Check speaker detection
+    if (elements.enableSpeakers?.checked) {
+        chips.push(`<span class="feature-chip speakers"><span class="chip-icon">&#128101;</span> Speaker Detection</span>`);
+    }
+
+    // Check vocabulary
+    if (elements.useVocabulary?.checked) {
+        chips.push(`<span class="feature-chip vocabulary"><span class="chip-icon">&#128218;</span> Custom Vocabulary</span>`);
+    }
+
+    if (chips.length > 0) {
+        container.innerHTML = chips.join('');
+        container.hidden = false;
+    } else {
+        container.hidden = true;
+    }
+}
+
+// ==========================================
+// Quick Preset Functions
+// ==========================================
+
+/**
+ * Set up quick preset button handlers.
+ */
+function setupPresetButtons() {
+    const presetBtns = document.querySelectorAll('.preset-btn');
+    presetBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            applyPreset(btn.dataset.preset);
+
+            // Update active state
+            presetBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
+}
+
+/**
+ * Apply a quick preset configuration.
+ */
+function applyPreset(preset) {
+    switch (preset) {
+        case 'fast':
+            if (elements.modelSelect) elements.modelSelect.value = 'tiny';
+            if (elements.languageSelect) elements.languageSelect.value = '';
+            if (elements.enableSpeakers) elements.enableSpeakers.checked = false;
+            if (elements.useVocabulary) elements.useVocabulary.checked = false;
+            break;
+
+        case 'balanced':
+            if (elements.modelSelect) elements.modelSelect.value = 'base';
+            if (elements.languageSelect) elements.languageSelect.value = '';
+            if (elements.enableSpeakers) elements.enableSpeakers.checked = false;
+            if (elements.useVocabulary) elements.useVocabulary.checked = false;
+            break;
+
+        case 'accurate':
+            if (elements.modelSelect) elements.modelSelect.value = 'large';
+            if (elements.languageSelect) elements.languageSelect.value = '';
+            if (elements.enableSpeakers) elements.enableSpeakers.checked = true;
+            if (elements.useVocabulary) elements.useVocabulary.checked = false;
+            break;
+    }
+
+    // Update AppState
+    AppState.settings.model = elements.modelSelect?.value || 'base';
+    AppState.settings.enableSpeakers = elements.enableSpeakers?.checked || false;
+    AppState.settings.useVocabulary = elements.useVocabulary?.checked || false;
+
+    // Save settings
+    saveSettings();
+
+    // Update summaries
+    updateAccordionSummaries();
+}
+
+/**
+ * Update the speaker legend with detected speakers.
+ */
+function updateSpeakerLegend(speakers) {
+    if (!elements.speakerLegend || !elements.legendItems) return;
+
+    if (!speakers || speakers.length === 0) {
+        elements.speakerLegend.hidden = true;
+        return;
+    }
+
+    // Build legend items
+    const items = speakers.map((speaker, idx) => {
+        const speakerClass = `speaker-${idx % 6}`;
+        const displayName = AppState.speakerNames[speaker] || speaker;
+        return `<span class="legend-item">
+            <span class="legend-dot ${speakerClass}"></span>
+            <span>${displayName}</span>
+        </span>`;
+    }).join('');
+
+    elements.legendItems.innerHTML = items;
+    elements.speakerLegend.hidden = false;
+}
+
+/**
+ * Check speaker detection availability and update UI.
+ */
+async function checkSpeakerDetectionStatus() {
+    const statusEl = document.getElementById('speaker-status');
+    if (!statusEl) return;
+
+    try {
+        const response = await fetch('/api/settings/status');
+        if (response.ok) {
+            const status = await response.json();
+            if (status.speaker_detection?.available) {
+                statusEl.textContent = 'Available';
+                statusEl.className = 'enhancement-status available';
+            } else {
+                statusEl.textContent = 'Not installed';
+                statusEl.className = 'enhancement-status unavailable';
+                statusEl.title = status.speaker_detection?.error || 'pyannote.audio not installed';
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to check speaker detection status:', e);
+    }
 }
 
 // Initialize on DOM ready

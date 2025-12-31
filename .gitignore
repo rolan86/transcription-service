@@ -313,4 +313,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 package-lock.json
-yarn.lockgenerations/
+yarn.lock
+
+# Generated outputs (user data - never commit)
+generations/

@@ -43,7 +43,24 @@
         semanticStatus: document.getElementById('semantic-status'),
         semanticIndicator: document.getElementById('semantic-indicator'),
         semanticStatusText: document.getElementById('semantic-status-text'),
+        // Tab elements
+        detailTabs: document.querySelectorAll('.detail-tab'),
+        tabTranscript: document.getElementById('tab-transcript'),
+        tabMetadata: document.getElementById('tab-metadata'),
+        tabAnalysis: document.getElementById('tab-analysis'),
+        entryAnalysis: document.getElementById('entry-analysis'),
+        entryExportBtn: document.getElementById('entry-export-btn'),
+        // Batch elements
+        batchActions: document.getElementById('batch-actions'),
+        batchCount: document.getElementById('batch-count'),
+        batchSelectAll: document.getElementById('batch-select-all'),
+        batchExport: document.getElementById('batch-export'),
+        batchDelete: document.getElementById('batch-delete'),
+        batchCancel: document.getElementById('batch-cancel'),
     };
+
+    // Batch selection state
+    let selectedEntries = new Set();
 
     // Initialize
     document.addEventListener('DOMContentLoaded', init);
@@ -120,6 +137,30 @@
         }
         if (elements.reindexBtn) {
             elements.reindexBtn.addEventListener('click', reindexAll);
+        }
+
+        // Tab events
+        elements.detailTabs.forEach(tab => {
+            tab.addEventListener('click', () => switchDetailTab(tab.dataset.tab));
+        });
+
+        // Export entry button
+        if (elements.entryExportBtn) {
+            elements.entryExportBtn.addEventListener('click', exportCurrentEntry);
+        }
+
+        // Batch operation events
+        if (elements.batchSelectAll) {
+            elements.batchSelectAll.addEventListener('click', selectAllEntries);
+        }
+        if (elements.batchExport) {
+            elements.batchExport.addEventListener('click', exportSelectedEntries);
+        }
+        if (elements.batchDelete) {
+            elements.batchDelete.addEventListener('click', deleteSelectedEntries);
+        }
+        if (elements.batchCancel) {
+            elements.batchCancel.addEventListener('click', cancelBatchSelection);
         }
     }
 
@@ -257,41 +298,45 @@
 
             const date = new Date(entry.created_at);
             elements.entryMeta.innerHTML = `
-                <div class="meta-row">
-                    <span class="meta-label">Date:</span>
-                    <span class="meta-value">${date.toLocaleString()}</span>
+                <div class="meta-card">
+                    <div class="meta-card-label">Date</div>
+                    <div class="meta-card-value">${date.toLocaleString()}</div>
                 </div>
-                <div class="meta-row">
-                    <span class="meta-label">Words:</span>
-                    <span class="meta-value">${entry.word_count}</span>
+                <div class="meta-card">
+                    <div class="meta-card-label">Words</div>
+                    <div class="meta-card-value">${entry.word_count.toLocaleString()}</div>
                 </div>
                 ${entry.language ? `
-                <div class="meta-row">
-                    <span class="meta-label">Language:</span>
-                    <span class="meta-value">${entry.language.toUpperCase()}</span>
+                <div class="meta-card">
+                    <div class="meta-card-label">Language</div>
+                    <div class="meta-card-value">${entry.language.toUpperCase()}</div>
                 </div>
                 ` : ''}
                 ${entry.model ? `
-                <div class="meta-row">
-                    <span class="meta-label">Model:</span>
-                    <span class="meta-value">${entry.model}</span>
+                <div class="meta-card">
+                    <div class="meta-card-label">Model</div>
+                    <div class="meta-card-value">${entry.model}</div>
                 </div>
                 ` : ''}
                 ${entry.confidence ? `
-                <div class="meta-row">
-                    <span class="meta-label">Confidence:</span>
-                    <span class="meta-value">${Math.round(entry.confidence * 100)}%</span>
+                <div class="meta-card">
+                    <div class="meta-card-label">Confidence</div>
+                    <div class="meta-card-value">${Math.round(entry.confidence * 100)}%</div>
                 </div>
                 ` : ''}
                 ${entry.speaker_count > 0 ? `
-                <div class="meta-row">
-                    <span class="meta-label">Speakers:</span>
-                    <span class="meta-value">${entry.speaker_count}</span>
+                <div class="meta-card">
+                    <div class="meta-card-label">Speakers</div>
+                    <div class="meta-card-value">${entry.speaker_count}</div>
                 </div>
                 ` : ''}
             `;
 
             elements.entryTranscript.textContent = entry.transcript_text || 'No transcript available';
+
+            // Reset to transcript tab
+            switchDetailTab('transcript');
+
             elements.entryModal.hidden = false;
         } catch (error) {
             console.error('Error loading entry:', error);
@@ -554,5 +599,130 @@
                 elements.reindexBtn.textContent = 'Reindex';
             }
         }
+    }
+
+    // ========================================================================
+    // Detail Tab Functions
+    // ========================================================================
+
+    function switchDetailTab(tabName) {
+        // Update tab buttons
+        elements.detailTabs.forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === tabName);
+        });
+
+        // Show/hide tab content
+        if (elements.tabTranscript) {
+            elements.tabTranscript.hidden = tabName !== 'transcript';
+        }
+        if (elements.tabMetadata) {
+            elements.tabMetadata.hidden = tabName !== 'metadata';
+        }
+        if (elements.tabAnalysis) {
+            elements.tabAnalysis.hidden = tabName !== 'analysis';
+        }
+    }
+
+    function exportCurrentEntry() {
+        if (!currentEntryId) return;
+
+        const text = elements.entryTranscript.textContent;
+        const filename = elements.entryTitle.textContent || 'transcript';
+
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename.replace(/\.[^/.]+$/, '') + '.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    // ========================================================================
+    // Batch Operation Functions
+    // ========================================================================
+
+    function updateBatchUI() {
+        const count = selectedEntries.size;
+        if (elements.batchActions) {
+            elements.batchActions.hidden = count === 0;
+        }
+        if (elements.batchCount) {
+            elements.batchCount.textContent = `${count} selected`;
+        }
+    }
+
+    function selectAllEntries() {
+        const checkboxes = elements.historyList.querySelectorAll('.entry-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = true;
+            selectedEntries.add(parseInt(cb.dataset.id));
+        });
+        updateBatchUI();
+    }
+
+    function cancelBatchSelection() {
+        const checkboxes = elements.historyList.querySelectorAll('.entry-checkbox');
+        checkboxes.forEach(cb => cb.checked = false);
+        selectedEntries.clear();
+        updateBatchUI();
+    }
+
+    async function exportSelectedEntries() {
+        if (selectedEntries.size === 0) return;
+
+        let combined = '';
+        for (const id of selectedEntries) {
+            try {
+                const response = await fetch(`/api/history/${id}`);
+                if (response.ok) {
+                    const entry = await response.json();
+                    combined += `=== ${entry.audio_filename} ===\n`;
+                    combined += `Date: ${new Date(entry.created_at).toLocaleString()}\n\n`;
+                    combined += (entry.transcript_text || '') + '\n\n';
+                }
+            } catch (e) {
+                console.error('Error fetching entry:', e);
+            }
+        }
+
+        const blob = new Blob([combined], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `transcripts_export_${Date.now()}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        cancelBatchSelection();
+    }
+
+    async function deleteSelectedEntries() {
+        if (selectedEntries.size === 0) return;
+
+        const count = selectedEntries.size;
+        if (!confirm(`Delete ${count} transcription${count !== 1 ? 's' : ''}? This cannot be undone.`)) {
+            return;
+        }
+
+        let deleted = 0;
+        for (const id of selectedEntries) {
+            try {
+                const response = await fetch(`/api/history/${id}`, { method: 'DELETE' });
+                if (response.ok) deleted++;
+            } catch (e) {
+                console.error('Error deleting entry:', e);
+            }
+        }
+
+        alert(`Deleted ${deleted} transcription${deleted !== 1 ? 's' : ''}`);
+        selectedEntries.clear();
+        updateBatchUI();
+        loadStats();
+        loadHistory();
     }
 })();

@@ -26,6 +26,7 @@ const featureDetails = document.getElementById('feature-details');
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     setupSettingsListeners();
+    updateStatusBar();
 });
 
 function setupSettingsListeners() {
@@ -336,6 +337,9 @@ async function saveSettings() {
         // Reload settings to show updated status
         await loadSettings();
 
+        // Update status bar
+        updateStatusBar();
+
         // Show success message
         showSettingsSuccess('Settings saved successfully');
 
@@ -362,5 +366,47 @@ function showSettingsSuccess(message) {
     }, 2000);
 }
 
+/**
+ * Update the status bar with current AI provider status.
+ */
+async function updateStatusBar() {
+    const statusDot = document.getElementById('ai-status-dot');
+    const statusText = document.getElementById('ai-status-text');
+
+    if (!statusDot || !statusText) return;
+
+    // Set checking state
+    statusDot.className = 'status-dot checking';
+
+    try {
+        const response = await fetch('/api/settings');
+        if (!response.ok) throw new Error('Failed to fetch settings');
+
+        const settings = await response.json();
+        const ai = settings.ai || {};
+        const available = ai.available_providers || [];
+        const current = ai.provider;
+
+        if (available.length > 0 && current) {
+            statusDot.className = 'status-dot available';
+            const providerNames = {
+                'ollama': 'Ollama',
+                'claude': 'Claude',
+                'zai': 'z.ai',
+                'llama': 'Llama'
+            };
+            statusText.textContent = `AI: ${providerNames[current] || current}`;
+        } else {
+            statusDot.className = 'status-dot unavailable';
+            statusText.textContent = 'AI: Not configured';
+        }
+    } catch (error) {
+        console.warn('Failed to update status bar:', error);
+        statusDot.className = 'status-dot unavailable';
+        statusText.textContent = 'AI: Error';
+    }
+}
+
 // Export for use in other modules
 window.openSettings = openSettings;
+window.updateStatusBar = updateStatusBar;
