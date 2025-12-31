@@ -57,6 +57,11 @@ class HistoryManager:
         history_dir.mkdir(parents=True, exist_ok=True)
         return history_dir / "history.db"
 
+    @property
+    def db_path(self) -> Path:
+        """Public accessor for database path."""
+        return self._db_path
+
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection with row factory."""
         conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
