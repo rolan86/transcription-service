@@ -5,7 +5,7 @@ REST API endpoints for batch transcription.
 import asyncio
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
 from fastapi.responses import JSONResponse
 
 from ..services.transcription_api import TranscriptionAPI
