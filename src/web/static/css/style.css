@@ -2318,6 +2318,112 @@ body {
     margin-left: 4px;
 }
 
+/* Features Status Grid */
+.features-status-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.feature-status-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--bg-color);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-color);
+}
+
+.feature-name {
+    font-size: 0.875rem;
+    color: var(--text-color);
+}
+
+.feature-indicator {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: bold;
+}
+
+.feature-indicator.loading {
+    background: var(--border-color);
+    animation: pulse 1.5s infinite;
+}
+
+.feature-indicator.available {
+    background: rgba(34, 197, 94, 0.2);
+    color: var(--success-color);
+}
+
+.feature-indicator.unavailable {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--error-color);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.feature-details {
+    margin-top: 12px;
+}
+
+.feature-detail-card {
+    padding: 12px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    border-radius: var(--radius);
+}
+
+.feature-detail-card strong {
+    color: var(--warning-color);
+}
+
+.feature-error {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin: 4px 0 8px;
+}
+
+.install-cmd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--card-bg);
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-color);
+}
+
+.install-cmd code {
+    flex: 1;
+    font-family: monospace;
+    font-size: 0.875rem;
+    color: var(--text-color);
+}
+
+.copy-cmd-btn {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.copy-cmd-btn:hover {
+    background: var(--primary-hover);
+}
+
 /* Settings modal responsive */
 @media (max-width: 480px) {
     .setting-row {
@@ -2328,5 +2434,9 @@ body {
     .setting-row label {
         min-width: auto;
         margin-bottom: 4px;
+    }
+
+    .features-status-grid {
+        grid-template-columns: 1fr;
     }
 }

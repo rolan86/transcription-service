@@ -109,8 +109,23 @@
                 </div>
 
                 <div class="settings-section">
-                    <h4>Translation</h4>
-                    <div class="settings-status" id="translation-status"></div>
+                    <h4>Features Status</h4>
+                    <p class="setting-description">Status of optional features and dependencies</p>
+                    <div class="features-status-grid" id="features-status">
+                        <div class="feature-status-item" id="feature-translation">
+                            <span class="feature-name">Translation</span>
+                            <span class="feature-indicator loading"></span>
+                        </div>
+                        <div class="feature-status-item" id="feature-speaker">
+                            <span class="feature-name">Speaker Detection</span>
+                            <span class="feature-indicator loading"></span>
+                        </div>
+                        <div class="feature-status-item" id="feature-semantic">
+                            <span class="feature-name">Semantic Search</span>
+                            <span class="feature-indicator loading"></span>
+                        </div>
+                    </div>
+                    <div class="feature-details" id="feature-details" hidden></div>
                 </div>
             </div>
             <div class="modal-actions">

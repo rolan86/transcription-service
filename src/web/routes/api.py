@@ -3,6 +3,8 @@ REST API endpoints for batch transcription.
 """
 
 import asyncio
+import math
+import os
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
@@ -187,7 +189,7 @@ async def transcribe_file(
                     start=seg.get("start", 0),
                     end=seg.get("end", 0),
                     text=seg.get("text", ""),
-                    confidence=seg.get("confidence"),
+                    confidence=math.exp(seg.get("avg_logprob", -1)) if seg.get("avg_logprob") is not None else None,
                     speaker=seg.get("speaker"),
                 )
                 for seg in result.get("segments", [])
@@ -383,7 +385,7 @@ async def get_job_result(job_id: str):
             "start": seg.get("start", 0),
             "end": seg.get("end", 0),
             "text": seg.get("text", ""),
-            "confidence": seg.get("confidence"),
+            "confidence": math.exp(seg.get("avg_logprob", -1)) if seg.get("avg_logprob") is not None else None,
             "speaker": seg.get("speaker"),
         }
         for seg in result.get("segments", [])
@@ -1382,4 +1384,104 @@ async def get_ollama_models():
         "available": True,
         "models": models,
         "count": len(models),
+    }
+
+
+@router.get("/settings/status")
+async def get_features_status():
+    """Get status of all optional features and their dependencies."""
+    from ..services.ai_provider import AIProviderFactory, OllamaProvider
+    from config.settings import Settings
+
+    settings = Settings()
+    ai_config = settings.config.get("ai", {})
+
+    # Check AI providers
+    ai_providers = {}
+
+    # Ollama
+    ollama_provider = OllamaProvider()
+    if ollama_provider.is_available():
+        ai_providers["ollama"] = {
+            "available": True,
+            "models": ollama_provider.get_available_models(),
+        }
+    else:
+        ai_providers["ollama"] = {
+            "available": False,
+            "error": "Ollama not running",
+            "install_cmd": "brew install ollama && ollama serve",
+        }
+
+    # Claude
+    claude_key = ai_config.get("claude", {}).get("api_key") or os.getenv("ANTHROPIC_API_KEY")
+    if claude_key:
+        ai_providers["claude"] = {"available": True}
+    else:
+        ai_providers["claude"] = {
+            "available": False,
+            "error": "ANTHROPIC_API_KEY not set",
+        }
+
+    # z.ai
+    zai_key = ai_config.get("zai", {}).get("api_key") or os.getenv("ZAI_API_KEY")
+    if zai_key:
+        ai_providers["zai"] = {"available": True}
+    else:
+        ai_providers["zai"] = {
+            "available": False,
+            "error": "ZAI_API_KEY not set",
+        }
+
+    # Llama.cpp
+    llama_path = ai_config.get("llama", {}).get("model_path") or os.getenv("LLAMA_MODEL_PATH")
+    if llama_path and os.path.exists(llama_path):
+        ai_providers["llama"] = {"available": True, "model_path": llama_path}
+    else:
+        ai_providers["llama"] = {
+            "available": False,
+            "error": "LLAMA_MODEL_PATH not set or file not found",
+        }
+
+    # Check translation (argostranslate)
+    translation_status = {"available": False}
+    try:
+        import argostranslate
+        translation_status = {"available": True}
+    except ImportError:
+        translation_status = {
+            "available": False,
+            "error": "argostranslate not installed",
+            "install_cmd": "pip install argostranslate",
+        }
+
+    # Check speaker detection (pyannote)
+    speaker_status = {"available": False}
+    try:
+        import pyannote.audio
+        speaker_status = {"available": True}
+    except ImportError:
+        speaker_status = {
+            "available": False,
+            "error": "pyannote.audio not installed",
+            "install_cmd": "pip install pyannote.audio",
+        }
+
+    # Check semantic search (sentence-transformers)
+    semantic_status = {"available": False}
+    try:
+        import sentence_transformers
+        semantic_status = {"available": True}
+    except ImportError:
+        semantic_status = {
+            "available": False,
+            "error": "sentence-transformers not installed",
+            "install_cmd": "pip install sentence-transformers",
+        }
+
+    return {
+        "ai_providers": ai_providers,
+        "translation": translation_status,
+        "speaker_detection": speaker_status,
+        "semantic_search": semantic_status,
     }

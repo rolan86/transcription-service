@@ -20,7 +20,8 @@ const claudeModel = document.getElementById('claude-model');
 const zaiKey = document.getElementById('zai-key');
 const zaiUrl = document.getElementById('zai-url');
 const llamaPath = document.getElementById('llama-path');
-const translationStatus = document.getElementById('translation-status');
+const featuresStatus = document.getElementById('features-status');
+const featureDetails = document.getElementById('feature-details');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -67,17 +68,28 @@ function closeSettings() {
 
 async function loadSettings() {
     try {
-        const response = await fetch('/api/settings');
-        if (!response.ok) {
-            if (response.status === 404) {
+        // Fetch settings and status in parallel
+        const [settingsResponse, statusResponse] = await Promise.all([
+            fetch('/api/settings'),
+            fetch('/api/settings/status'),
+        ]);
+
+        if (!settingsResponse.ok) {
+            if (settingsResponse.status === 404) {
                 throw new Error('Settings API not found. Please restart the server.');
             }
-            const errorData = await response.json().catch(() => ({}));
+            const errorData = await settingsResponse.json().catch(() => ({}));
             throw new Error(errorData.detail || 'Failed to load settings');
         }
 
-        currentSettings = await response.json();
+        currentSettings = await settingsResponse.json();
         populateSettings(currentSettings);
+
+        // Load features status
+        if (statusResponse.ok) {
+            const statusData = await statusResponse.json();
+            updateFeaturesStatus(statusData);
+        }
     } catch (error) {
         console.error('Failed to load settings:', error);
         showSettingsError(error.message);
@@ -86,11 +98,9 @@ async function loadSettings() {
 
 function populateSettings(settings) {
     const ai = settings.ai || {};
-    const translation = settings.translation || {};
 
-    // Show status
+    // Show AI status
     updateAIStatus(ai);
-    updateTranslationStatus(translation);
 
     // Set current provider
     if (aiProvider) {
@@ -165,21 +175,81 @@ function updateAIStatus(ai) {
     `;
 }
 
-function updateTranslationStatus(translation) {
-    if (!translationStatus) return;
-
-    if (translation.available) {
-        translationStatus.innerHTML = `
-            <div class="status-success">Translation service available (argostranslate)</div>
-        `;
-    } else {
-        const error = translation.error || 'Not available';
-        translationStatus.innerHTML = `
-            <div class="status-warning">
-                ${error}
-            </div>
-        `;
+function updateFeaturesStatus(status) {
+    // Update Translation status
+    const translationEl = document.getElementById('feature-translation');
+    if (translationEl) {
+        updateFeatureItem(translationEl, status.translation, 'Translation');
     }
+
+    // Update Speaker Detection status
+    const speakerEl = document.getElementById('feature-speaker');
+    if (speakerEl) {
+        updateFeatureItem(speakerEl, status.speaker_detection, 'Speaker Detection');
+    }
+
+    // Update Semantic Search status
+    const semanticEl = document.getElementById('feature-semantic');
+    if (semanticEl) {
+        updateFeatureItem(semanticEl, status.semantic_search, 'Semantic Search');
+    }
+}
+
+function updateFeatureItem(element, featureStatus, featureName) {
+    const indicator = element.querySelector('.feature-indicator');
+    if (!indicator) return;
+
+    indicator.classList.remove('loading');
+
+    if (featureStatus?.available) {
+        indicator.classList.add('available');
+        indicator.classList.remove('unavailable');
+        indicator.title = 'Available';
+        indicator.textContent = '\u2713'; // checkmark
+    } else {
+        indicator.classList.add('unavailable');
+        indicator.classList.remove('available');
+        indicator.title = featureStatus?.error || 'Not available';
+        indicator.textContent = '\u2717'; // X mark
+
+        // Add click handler to show install instructions
+        if (featureStatus?.install_cmd) {
+            element.style.cursor = 'pointer';
+            element.onclick = () => showFeatureDetails(featureName, featureStatus);
+        }
+    }
+}
+
+function showFeatureDetails(featureName, featureStatus) {
+    if (!featureDetails) return;
+
+    featureDetails.hidden = false;
+    featureDetails.innerHTML = `
+        <div class="feature-detail-card">
+            <strong>${featureName}</strong>
+            <p class="feature-error">${featureStatus.error || 'Not available'}</p>
+            ${featureStatus.install_cmd ? `
+                <div class="install-cmd">
+                    <code>${featureStatus.install_cmd}</code>
+                    <button class="copy-cmd-btn" onclick="copyInstallCmd('${featureStatus.install_cmd}')" title="Copy">Copy</button>
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+function copyInstallCmd(cmd) {
+    navigator.clipboard.writeText(cmd).then(() => {
+        // Brief visual feedback
+        const btn = document.querySelector('.copy-cmd-btn');
+        if (btn) {
+            const original = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = original, 1500);
+        }
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+    });
 }
 
 function populateOllamaModels(models, currentModel) {

@@ -48,8 +48,14 @@ function initApp() {
     // Cache DOM elements
     cacheElements();
 
+    // Load saved settings from localStorage
+    loadSavedSettings();
+
     // Set up event listeners
     setupEventListeners();
+
+    // Apply loaded settings to UI
+    applySettingsToUI();
 
     // Initialize theme
     initTheme();
@@ -59,6 +65,75 @@ function initApp() {
     initRecorder();
 
     console.log('Transcription app initialized');
+}
+
+/**
+ * Load saved settings from localStorage and apply to UI.
+ */
+function loadSavedSettings() {
+    try {
+        const saved = localStorage.getItem('transcription_settings');
+        if (saved) {
+            const settings = JSON.parse(saved);
+            // Apply saved settings to AppState
+            if (settings.enableSpeakers !== undefined) {
+                AppState.settings.enableSpeakers = settings.enableSpeakers;
+            }
+            if (settings.showTimestamps !== undefined) {
+                AppState.settings.showTimestamps = settings.showTimestamps;
+            }
+            if (settings.showConfidence !== undefined) {
+                AppState.settings.showConfidence = settings.showConfidence;
+            }
+            if (settings.model) {
+                AppState.settings.model = settings.model;
+            }
+            if (settings.outputFormat) {
+                AppState.settings.outputFormat = settings.outputFormat;
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to load saved settings:', e);
+    }
+}
+
+/**
+ * Save current settings to localStorage.
+ */
+function saveSettings() {
+    try {
+        const settings = {
+            enableSpeakers: AppState.settings.enableSpeakers,
+            showTimestamps: AppState.settings.showTimestamps,
+            showConfidence: AppState.settings.showConfidence,
+            model: AppState.settings.model,
+            outputFormat: AppState.settings.outputFormat,
+        };
+        localStorage.setItem('transcription_settings', JSON.stringify(settings));
+    } catch (e) {
+        console.warn('Failed to save settings:', e);
+    }
+}
+
+/**
+ * Apply loaded settings to UI elements (called after cacheElements).
+ */
+function applySettingsToUI() {
+    if (elements.enableSpeakers) {
+        elements.enableSpeakers.checked = AppState.settings.enableSpeakers;
+    }
+    if (elements.showTimestamps) {
+        elements.showTimestamps.checked = AppState.settings.showTimestamps;
+    }
+    if (elements.showConfidence) {
+        elements.showConfidence.checked = AppState.settings.showConfidence;
+    }
+    if (elements.modelSelect) {
+        elements.modelSelect.value = AppState.settings.model;
+    }
+    if (elements.formatSelect) {
+        elements.formatSelect.value = AppState.settings.outputFormat;
+    }
 }
 
 /**
@@ -238,6 +313,7 @@ function setupEventListeners() {
     // Settings changes
     elements.modelSelect.addEventListener('change', (e) => {
         AppState.settings.model = e.target.value;
+        saveSettings();
     });
 
     elements.languageSelect.addEventListener('change', (e) => {
@@ -246,18 +322,22 @@ function setupEventListeners() {
 
     elements.formatSelect.addEventListener('change', (e) => {
         AppState.settings.outputFormat = e.target.value;
+        saveSettings();
     });
 
     elements.enableSpeakers.addEventListener('change', (e) => {
         AppState.settings.enableSpeakers = e.target.checked;
+        saveSettings();
     });
 
     elements.showTimestamps.addEventListener('change', (e) => {
         AppState.settings.showTimestamps = e.target.checked;
+        saveSettings();
     });
 
     elements.showConfidence.addEventListener('change', (e) => {
         AppState.settings.showConfidence = e.target.checked;
+        saveSettings();
     });
 
     // Result actions
@@ -1247,8 +1327,8 @@ async function performTranslation() {
 
         const formData = new FormData();
         formData.append('text', AppState.result.text);
-        formData.append('from_code', fromLang);
-        formData.append('to_code', toLang);
+        formData.append('from_language', fromLang);
+        formData.append('to_language', toLang);
 
         const response = await fetch('/api/translate', {
             method: 'POST',
