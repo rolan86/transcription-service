@@ -51,6 +51,20 @@ A powerful, production-ready CLI tool for transcribing audio and video files to 
 - **Offline Translation**: Local translation via argos-translate (no API required)
 - **11 Languages**: English, Spanish, French, German, Italian, Portuguese, Chinese, Japanese, Korean, Russian, Arabic
 
+### 🤖 **AI-Powered Analysis**
+- **Smart Cleanup**: Remove filler words, fix punctuation and grammar
+- **Summarization**: Generate short, medium, or long summaries
+- **Key Points Extraction**: Automatically identify main topics
+- **Action Items**: Extract tasks and commitments from meetings
+- **Entity Recognition**: Identify people, organizations, dates, locations
+- **Meeting Notes**: Generate formatted meeting notes in Markdown
+- **Multi-Provider Support**: Ollama (local), Claude API, z.ai, or Llama.cpp
+
+### 🔍 **Semantic Search**
+- **Search by Meaning**: Find transcripts by semantic similarity, not just keywords
+- **Local Embeddings**: Privacy-preserving search using sentence-transformers
+- **Auto-Indexing**: New transcriptions are automatically indexed
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -164,6 +178,31 @@ Then open http://localhost:8000 in your browser. The web interface provides:
 - **Record Mode**: Record directly from your microphone with real-time transcription
 - **History**: Browse and search past transcriptions
 - **Translation**: Translate transcripts to 11 languages (offline)
+- **AI Analysis**: Clean up, summarize, and analyze transcripts
+- **Settings**: Configure AI providers via the gear icon in the header
+
+### AI Provider Setup (Optional)
+
+The AI features (cleanup, summarization, analysis) require an LLM provider. Choose one:
+
+#### Option 1: Ollama (Recommended for Local Use)
+```bash
+# Install Ollama from https://ollama.ai
+# Then pull a model:
+ollama pull llama3
+
+# Start the server (runs on localhost:11434)
+ollama serve
+```
+
+#### Option 2: Claude API
+```bash
+# Set your API key (get from https://console.anthropic.com/)
+export ANTHROPIC_API_KEY="sk-ant-your-key-here"
+```
+
+#### Option 3: Configure via Web UI
+Click the gear icon in the web interface to open Settings, where you can configure providers and see which ones are available.
 
 ### Configuration Management
 ```bash
@@ -271,27 +310,48 @@ transcription:
   default_model: "base"      # tiny, base, small, medium, large
   default_language: null     # Auto-detect or specific (e.g., "en", "es")
   chunk_duration: 30         # Seconds per chunk for large files
-  
+
 output:
   default_format: "txt"      # txt, json
   include_metadata: true     # Include processing metadata
   include_timestamps: false  # Include timestamps in output
-  
+
 processing:
   cleanup_temp_files: true   # Clean up temporary files
   progress_reporting: true   # Show progress bars
-  
+
 logging:
   level: "INFO"             # DEBUG, INFO, WARNING, ERROR
   file: null                # Optional log file path
+
+ai:
+  provider: "ollama"         # ollama, claude, zai, or llama
+  ollama:
+    model: "llama3"          # Any installed Ollama model
+    base_url: "http://localhost:11434"
+  claude:
+    api_key: null            # Set via ANTHROPIC_API_KEY env var
+    model: "claude-sonnet-4-20250514"
+  zai:
+    api_key: null            # Set via ZAI_API_KEY env var
+  llama:
+    model_path: null         # Path to .gguf model file
 ```
 
 ### Environment Variables
 ```bash
+# Transcription settings
 export TRANSCRIPTION_MODEL="large"
 export TRANSCRIPTION_LANGUAGE="en"
 export TRANSCRIPTION_OUTPUT_FORMAT="json"
 export TRANSCRIPTION_LOG_LEVEL="DEBUG"
+
+# AI Provider settings
+export AI_PROVIDER="ollama"              # ollama, claude, zai, or llama
+export OLLAMA_MODEL="llama3"             # Ollama model name
+export ANTHROPIC_API_KEY="sk-ant-..."    # Claude API key
+export ZAI_API_KEY="your-key"            # z.ai API key
+export LLAMA_MODEL_PATH="/path/to/model.gguf"  # Local model path
 ```
 
 ## 🔧 Command Reference

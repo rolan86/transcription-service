@@ -715,9 +715,15 @@ function hideResults() {
 
 /**
  * Show error message.
+ * @param {string} message - The error message to display
+ * @param {boolean} showSettingsLink - Whether to show a link to open settings
  */
-function showError(message) {
-    elements.errorMessage.textContent = message;
+function showError(message, showSettingsLink = false) {
+    if (showSettingsLink) {
+        elements.errorMessage.innerHTML = `${message} <a href="#" class="settings-link" onclick="openSettings(); return false;">Open Settings</a>`;
+    } else {
+        elements.errorMessage.textContent = message;
+    }
     elements.errorContainer.hidden = false;
 }
 
@@ -1337,7 +1343,7 @@ async function showCleanupModal() {
         }
     } catch (err) {
         console.error('Failed to load AI providers:', err);
-        cleanupModalElements.providerStatus.textContent = 'No providers available';
+        cleanupModalElements.providerStatus.innerHTML = 'No providers available. <a href="#" class="settings-link" onclick="openSettings(); return false;">Open Settings</a>';
         cleanupModalElements.providerStatus.className = 'provider-status error';
     }
 
@@ -1370,7 +1376,7 @@ function populateProviderSelect(data) {
         cleanupModalElements.providerStatus.textContent = `${available.length} provider(s) available`;
         cleanupModalElements.providerStatus.className = 'provider-status success';
     } else {
-        cleanupModalElements.providerStatus.textContent = 'No providers configured';
+        cleanupModalElements.providerStatus.innerHTML = 'No providers configured. <a href="#" class="settings-link" onclick="openSettings(); return false;">Open Settings</a>';
         cleanupModalElements.providerStatus.className = 'provider-status error';
         cleanupModalElements.runBtn.disabled = true;
     }

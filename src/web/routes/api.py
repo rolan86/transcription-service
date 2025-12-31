@@ -658,33 +658,48 @@ async def translate_text(
 @router.get("/ai/providers")
 async def get_ai_providers():
     """Get available AI providers and their status."""
-    from ..services.ai_provider import AIProviderFactory
+    from ..services.ai_provider import AIProviderFactory, OllamaProvider
     from config.settings import Settings
 
     settings = Settings()
     ai_config = settings.config.get("ai", {})
 
     available = AIProviderFactory.get_available_providers(ai_config)
-    current_provider = ai_config.get("provider", "claude")
+    current_provider = ai_config.get("provider", "ollama")
+
+    # Get Ollama models if available
+    ollama_models = []
+    if "ollama" in available:
+        ollama_models = AIProviderFactory.get_ollama_models()
 
     return {
         "available_providers": available,
-        "current_provider": current_provider if current_provider in available else None,
+        "current_provider": current_provider if current_provider in available else (available[0] if available else None),
         "providers": {
             "zai": {
                 "name": "z.ai",
                 "available": "zai" in available,
                 "description": "OpenAI-compatible API endpoint",
+                "requires": "ZAI_API_KEY",
             },
             "claude": {
                 "name": "Claude (Anthropic)",
                 "available": "claude" in available,
                 "description": "Anthropic Claude API",
+                "requires": "ANTHROPIC_API_KEY",
+            },
+            "ollama": {
+                "name": "Ollama (Local)",
+                "available": "ollama" in available,
+                "description": "Local LLM via Ollama server",
+                "requires": "Ollama running at localhost:11434",
+                "models": ollama_models,
             },
             "llama": {
-                "name": "Local Llama",
+                "name": "Llama.cpp (Local)",
                 "available": "llama" in available,
                 "description": "Local Llama model via llama-cpp-python",
+                "requires": "LLAMA_MODEL_PATH",
             },
         },
     }
@@ -1167,3 +1182,204 @@ async def delete_transcript_index(history_id: int):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+
+
+# ============================================================================
+# Settings Endpoints
+# ============================================================================
+
+@router.get("/settings")
+async def get_settings():
+    """Get current application settings with provider status."""
+    from ..services.ai_provider import AIProviderFactory
+    from ..services.translation_service import TranslationService
+    from config.settings import Settings
+
+    settings = Settings()
+    ai_config = settings.config.get("ai", {})
+
+    # Get AI provider availability
+    available_providers = AIProviderFactory.get_available_providers(ai_config)
+
+    # Get Ollama models if available
+    ollama_models = []
+    if "ollama" in available_providers:
+        ollama_models = AIProviderFactory.get_ollama_models()
+
+    # Check translation service
+    translation_service = TranslationService()
+    translation_available = translation_service.is_available()
+    translation_error = None
+    if not translation_available:
+        try:
+            import argostranslate
+        except ImportError:
+            translation_error = "argostranslate not installed. Run: pip install argostranslate"
+
+    return {
+        "ai": {
+            "provider": ai_config.get("provider", "ollama"),
+            "available_providers": available_providers,
+            "zai": {
+                "configured": bool(ai_config.get("zai", {}).get("api_key")),
+                "base_url": ai_config.get("zai", {}).get("base_url", "https://api.z.ai/v1"),
+            },
+            "claude": {
+                "configured": bool(ai_config.get("claude", {}).get("api_key")),
+                "model": ai_config.get("claude", {}).get("model", "claude-sonnet-4-20250514"),
+            },
+            "ollama": {
+                "available": "ollama" in available_providers,
+                "model": ai_config.get("ollama", {}).get("model", "llama3"),
+                "base_url": ai_config.get("ollama", {}).get("base_url", "http://localhost:11434"),
+                "models": ollama_models,
+            },
+            "llama": {
+                "configured": bool(ai_config.get("llama", {}).get("model_path")),
+                "model_path": ai_config.get("llama", {}).get("model_path"),
+            },
+        },
+        "translation": {
+            "available": translation_available,
+            "error": translation_error,
+        },
+        "transcription": settings.config.get("transcription", {}),
+        "config_file": settings.config_file_path,
+    }
+
+
+@router.put("/settings/ai")
+async def update_ai_settings(
+    provider: Optional[str] = Form(default=None),
+    zai_api_key: Optional[str] = Form(default=None),
+    zai_base_url: Optional[str] = Form(default=None),
+    anthropic_api_key: Optional[str] = Form(default=None),
+    claude_model: Optional[str] = Form(default=None),
+    ollama_model: Optional[str] = Form(default=None),
+    ollama_base_url: Optional[str] = Form(default=None),
+    llama_model_path: Optional[str] = Form(default=None),
+):
+    """Update AI provider settings."""
+    from config.settings import Settings
+    import os
+
+    settings = Settings()
+
+    # Ensure ai section exists
+    if "ai" not in settings.config:
+        settings.config["ai"] = {}
+
+    ai_config = settings.config["ai"]
+
+    # Update provider
+    if provider:
+        ai_config["provider"] = provider
+
+    # Update z.ai settings
+    if "zai" not in ai_config:
+        ai_config["zai"] = {}
+    if zai_api_key is not None:
+        ai_config["zai"]["api_key"] = zai_api_key if zai_api_key else None
+    if zai_base_url:
+        ai_config["zai"]["base_url"] = zai_base_url
+
+    # Update Claude settings
+    if "claude" not in ai_config:
+        ai_config["claude"] = {}
+    if anthropic_api_key is not None:
+        ai_config["claude"]["api_key"] = anthropic_api_key if anthropic_api_key else None
+    if claude_model:
+        ai_config["claude"]["model"] = claude_model
+
+    # Update Ollama settings
+    if "ollama" not in ai_config:
+        ai_config["ollama"] = {}
+    if ollama_model:
+        ai_config["ollama"]["model"] = ollama_model
+    if ollama_base_url:
+        ai_config["ollama"]["base_url"] = ollama_base_url
+
+    # Update Llama settings
+    if "llama" not in ai_config:
+        ai_config["llama"] = {}
+    if llama_model_path is not None:
+        ai_config["llama"]["model_path"] = llama_model_path if llama_model_path else None
+
+    # Save to config file
+    try:
+        settings.save_user_config()
+
+        # Also update .env file for environment variable persistence
+        _update_env_file({
+            "ZAI_API_KEY": ai_config.get("zai", {}).get("api_key"),
+            "ZAI_BASE_URL": ai_config.get("zai", {}).get("base_url"),
+            "ANTHROPIC_API_KEY": ai_config.get("claude", {}).get("api_key"),
+            "CLAUDE_MODEL": ai_config.get("claude", {}).get("model"),
+            "OLLAMA_MODEL": ai_config.get("ollama", {}).get("model"),
+            "OLLAMA_BASE_URL": ai_config.get("ollama", {}).get("base_url"),
+            "LLAMA_MODEL_PATH": ai_config.get("llama", {}).get("model_path"),
+            "AI_PROVIDER": ai_config.get("provider"),
+        })
+
+        return {
+            "success": True,
+            "message": "AI settings updated",
+            "config_file": settings.config_file_path,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save settings: {str(e)}")
+
+
+def _update_env_file(env_vars: dict):
+    """Helper to update .env file with new values."""
+    from pathlib import Path
+
+    env_path = Path.home() / ".transcription" / ".env"
+    env_path.parent.mkdir(exist_ok=True)
+
+    # Read existing .env if it exists
+    existing = {}
+    if env_path.exists():
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    existing[key] = value
+
+    # Update with new values (skip None values, remove empty strings)
+    for key, value in env_vars.items():
+        if value is None:
+            continue
+        if value == "":
+            existing.pop(key, None)
+        else:
+            existing[key] = value
+
+    # Write back
+    with open(env_path, "w") as f:
+        f.write("# Transcription Service Configuration\n")
+        f.write("# Generated by the settings UI\n\n")
+        for key, value in sorted(existing.items()):
+            f.write(f"{key}={value}\n")
+
+
+@router.get("/settings/ollama/models")
+async def get_ollama_models():
+    """Get available Ollama models."""
+    from ..services.ai_provider import AIProviderFactory, OllamaProvider
+
+    provider = OllamaProvider()
+    if not provider.is_available():
+        return {
+            "available": False,
+            "models": [],
+            "error": "Ollama not running. Start with: ollama serve",
+        }
+
+    models = provider.get_available_models()
+    return {
+        "available": True,
+        "models": models,
+        "count": len(models),
+    }

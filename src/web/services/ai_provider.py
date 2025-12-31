@@ -1,12 +1,13 @@
 """
 Multi-provider LLM abstraction for AI features.
-Supports z.ai (OpenAI-compatible), Claude API, and local Llama models.
+Supports z.ai (OpenAI-compatible), Claude API, Ollama, and local Llama models.
 """
 
 import os
 import asyncio
+import httpx
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -159,6 +160,53 @@ class LlamaProvider(AIProvider):
         return result
 
 
+class OllamaProvider(AIProvider):
+    """Ollama local model provider via REST API."""
+
+    def __init__(self, model: str = "llama3", base_url: str = "http://localhost:11434"):
+        self.model = model
+        self.base_url = base_url
+        self._available_models: Optional[List[str]] = None
+
+    def is_available(self) -> bool:
+        """Check if Ollama is running and has models available."""
+        try:
+            with httpx.Client(timeout=2.0) as client:
+                response = client.get(f"{self.base_url}/api/tags")
+                if response.status_code == 200:
+                    data = response.json()
+                    models = [m.get("name", "") for m in data.get("models", [])]
+                    self._available_models = models
+                    return len(models) > 0
+        except Exception:
+            pass
+        return False
+
+    def get_available_models(self) -> List[str]:
+        """Get list of available Ollama models."""
+        if self._available_models is None:
+            self.is_available()
+        return self._available_models or []
+
+    async def complete(self, prompt: str, system: Optional[str] = None) -> str:
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+        }
+        if system:
+            payload["system"] = system
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{self.base_url}/api/generate",
+                json=payload
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("response", "")
+
+
 class AIProviderFactory:
     """Factory for creating AI providers."""
 
@@ -168,7 +216,7 @@ class AIProviderFactory:
         Create an AI provider instance.
 
         Args:
-            provider_type: One of 'zai', 'claude', or 'llama'
+            provider_type: One of 'zai', 'claude', 'ollama', or 'llama'
             config: Provider-specific configuration
 
         Returns:
@@ -188,6 +236,11 @@ class AIProviderFactory:
             return ClaudeProvider(
                 api_key=config.get("api_key"),
                 model=config.get("model", "claude-sonnet-4-20250514")
+            )
+        elif provider_type == "ollama":
+            return OllamaProvider(
+                model=config.get("model", "llama3"),
+                base_url=config.get("base_url", "http://localhost:11434")
             )
         elif provider_type == "llama":
             return LlamaProvider(
@@ -220,10 +273,25 @@ class AIProviderFactory:
         if claude_config.get("api_key") or os.getenv("ANTHROPIC_API_KEY"):
             available.append("claude")
 
-        # Check Llama
+        # Check Ollama (local server)
+        ollama_config = config.get("ollama", {})
+        ollama_provider = OllamaProvider(
+            model=ollama_config.get("model", "llama3"),
+            base_url=ollama_config.get("base_url", "http://localhost:11434")
+        )
+        if ollama_provider.is_available():
+            available.append("ollama")
+
+        # Check Llama (local .gguf file)
         llama_config = config.get("llama", {})
         model_path = llama_config.get("model_path") or os.getenv("LLAMA_MODEL_PATH")
         if model_path and os.path.exists(model_path):
             available.append("llama")
 
         return available
+
+    @staticmethod
+    def get_ollama_models() -> List[str]:
+        """Get list of models available in Ollama."""
+        provider = OllamaProvider()
+        return provider.get_available_models()

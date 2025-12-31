@@ -72,7 +72,7 @@ class Settings:
             'enhanced_metadata_content_analysis': True
         },
         'ai': {
-            'provider': 'claude',  # 'zai', 'claude', or 'llama'
+            'provider': 'ollama',  # 'zai', 'claude', 'ollama', or 'llama'
             'zai': {
                 'api_key': None,  # Set via env: ZAI_API_KEY
                 'base_url': 'https://api.z.ai/v1',
@@ -80,6 +80,10 @@ class Settings:
             'claude': {
                 'api_key': None,  # Set via env: ANTHROPIC_API_KEY
                 'model': 'claude-sonnet-4-20250514',
+            },
+            'ollama': {
+                'model': 'llama3',  # Default Ollama model
+                'base_url': 'http://localhost:11434',
             },
             'llama': {
                 'model_path': None,  # Path to .gguf model file
@@ -172,8 +176,31 @@ class Settings:
             'WHISPER_CACHE_DIR': ('whisper', 'cache_dir'),
             'WHISPER_DOWNLOAD_ROOT': ('whisper', 'download_root'),
             'WHISPER_DOWNLOAD_TIMEOUT': ('whisper', 'download_timeout'),
-            'WHISPER_NO_PROGRESS': ('whisper', 'no_progress')
+            'WHISPER_NO_PROGRESS': ('whisper', 'no_progress'),
+
+            # AI provider settings
+            'AI_PROVIDER': ('ai', 'provider'),
         }
+
+        # Handle nested AI provider settings
+        ai_env_vars = {
+            'ZAI_API_KEY': ('zai', 'api_key'),
+            'ZAI_BASE_URL': ('zai', 'base_url'),
+            'ANTHROPIC_API_KEY': ('claude', 'api_key'),
+            'CLAUDE_MODEL': ('claude', 'model'),
+            'OLLAMA_MODEL': ('ollama', 'model'),
+            'OLLAMA_BASE_URL': ('ollama', 'base_url'),
+            'LLAMA_MODEL_PATH': ('llama', 'model_path'),
+        }
+
+        for env_var, (provider, key) in ai_env_vars.items():
+            value = os.getenv(env_var)
+            if value is not None:
+                if 'ai' not in self.config:
+                    self.config['ai'] = {}
+                if provider not in self.config['ai']:
+                    self.config['ai'][provider] = {}
+                self.config['ai'][provider][key] = value
         
         for env_var, (section, key) in env_mapping.items():
             value = os.getenv(env_var)
@@ -301,3 +328,8 @@ class Settings:
     def whisper_config(self) -> Dict[str, Any]:
         """Get Whisper-specific configuration."""
         return self.config.get('whisper', {})
+
+    @property
+    def ai_config(self) -> Dict[str, Any]:
+        """Get AI-specific configuration."""
+        return self.config.get('ai', {})
