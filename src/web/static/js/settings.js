@@ -47,6 +47,11 @@ function setupSettingsListeners() {
     // Save settings
     settingsSave?.addEventListener('click', saveSettings);
 
+    // Provider selection change - show/hide appropriate settings
+    aiProvider?.addEventListener('change', (e) => {
+        showProviderSettings(e.target.value);
+    });
+
     // Close on Escape key
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && settingsModal && !settingsModal.hidden) {
@@ -97,16 +102,28 @@ async function loadSettings() {
     }
 }
 
+/**
+ * Show only the settings section for the selected provider.
+ */
+function showProviderSettings(provider) {
+    const allSections = document.querySelectorAll('.provider-settings');
+    allSections.forEach(section => {
+        section.hidden = section.dataset.provider !== provider;
+    });
+}
+
 function populateSettings(settings) {
     const ai = settings.ai || {};
 
     // Show AI status
     updateAIStatus(ai);
 
-    // Set current provider
+    // Set current provider and show its settings
+    const provider = ai.provider || 'ollama';
     if (aiProvider) {
-        aiProvider.value = ai.provider || 'ollama';
+        aiProvider.value = provider;
     }
+    showProviderSettings(provider);
 
     // Populate Ollama models
     if (ollamaModel && ai.ollama?.models) {
