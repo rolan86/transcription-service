@@ -75,7 +75,8 @@ class Settings:
             'provider': 'ollama',  # 'zai', 'claude', 'ollama', or 'llama'
             'zai': {
                 'api_key': None,  # Set via env: ZAI_API_KEY
-                'base_url': 'https://api.z.ai/v1',
+                'base_url': 'https://api.z.ai/api/paas/v4/',
+                'model': 'glm-4.5',  # Options: glm-4.5, glm-4.6, glm-4.7, etc.
             },
             'claude': {
                 'api_key': None,  # Set via env: ANTHROPIC_API_KEY
@@ -97,11 +98,12 @@ class Settings:
     def __init__(self, config_file: Optional[str] = None):
         """
         Initialize settings with hierarchical loading.
-        
+
         Args:
             config_file: Optional path to specific config file
         """
-        self.config = self.DEFAULT_CONFIG.copy()
+        import copy
+        self.config = copy.deepcopy(self.DEFAULT_CONFIG)
         self.config_file_path = None
         
         # Load configuration in order of priority (lowest to highest)
@@ -147,6 +149,12 @@ class Settings:
     
     def _load_environment_variables(self):
         """Load configuration from environment variables."""
+        # Load .env file from user config directory if it exists
+        from dotenv import load_dotenv
+        user_env_path = Path.home() / '.transcription' / '.env'
+        if user_env_path.exists():
+            load_dotenv(user_env_path, override=True)
+
         env_mapping = {
             # Core transcription settings
             'TRANSCRIPTION_MODEL': ('transcription', 'default_model'),
@@ -186,6 +194,7 @@ class Settings:
         ai_env_vars = {
             'ZAI_API_KEY': ('zai', 'api_key'),
             'ZAI_BASE_URL': ('zai', 'base_url'),
+            'ZAI_MODEL': ('zai', 'model'),
             'ANTHROPIC_API_KEY': ('claude', 'api_key'),
             'CLAUDE_MODEL': ('claude', 'model'),
             'OLLAMA_MODEL': ('ollama', 'model'),

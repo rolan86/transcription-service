@@ -6,11 +6,13 @@ Supports long-duration recordings with server-side chunk persistence.
 import json
 import base64
 import asyncio
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..services.streaming_transcriber import StreamingTranscriber
 from ..services.recording_session import SessionManager, RecordingSession
+from ..services.history_manager import HistoryManager
 
 router = APIRouter()
 
@@ -59,6 +61,8 @@ async def websocket_transcribe(websocket: WebSocket):
 
     transcriber: Optional[StreamingTranscriber] = None
     session: Optional[RecordingSession] = None
+    current_model: str = "base"
+    current_language: Optional[str] = None
 
     try:
         while True:
@@ -77,15 +81,15 @@ async def websocket_transcribe(websocket: WebSocket):
 
             if msg_type == "start":
                 # Initialize transcriber with config
-                model = message.get("model", "base")
-                language = message.get("language")
+                current_model = message.get("model", "base")
+                current_language = message.get("language")
                 sample_rate = message.get("sample_rate", 16000)
                 chunk_duration = message.get("chunk_duration", 5.0)
                 enable_persistence = message.get("enable_persistence", True)
 
                 transcriber = StreamingTranscriber(
-                    model_size=model,
-                    language=language,
+                    model_size=current_model,
+                    language=current_language,
                     sample_rate=sample_rate,
                     chunk_duration=chunk_duration,
                 )
@@ -99,7 +103,7 @@ async def websocket_transcribe(websocket: WebSocket):
 
                 await websocket.send_json({
                     "type": "ready",
-                    "message": f"Transcriber initialized with model '{model}'",
+                    "message": f"Transcriber initialized with model '{current_model}'",
                     "session_id": session_id,
                 })
 
@@ -185,6 +189,31 @@ async def websocket_transcribe(websocket: WebSocket):
                         "segments": final_result.get("segments", []),
                         "session_duration": session.total_duration if session else 0,
                     })
+
+                    # Save to history
+                    try:
+                        final_text = final_result.get("text", "")
+                        if final_text.strip():
+                            history_manager = HistoryManager()
+                            # Create result dict matching save_transcription format
+                            result_for_history = {
+                                "text": final_text,
+                                "language": current_language,
+                                "duration": session.total_duration if session else 0,
+                                "confidence": 0.9,
+                                "segments": final_result.get("segments", []),
+                                "metadata": {
+                                    "transcription": {
+                                        "model": current_model,
+                                    }
+                                }
+                            }
+                            history_manager.save_transcription(
+                                result=result_for_history,
+                                filename=f"Recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                            )
+                    except Exception as hist_err:
+                        print(f"Warning: Failed to save recording to history: {hist_err}")
 
                     # Cleanup
                     transcriber.cleanup()

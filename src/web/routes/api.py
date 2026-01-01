@@ -1224,7 +1224,8 @@ async def get_settings():
             "available_providers": available_providers,
             "zai": {
                 "configured": bool(ai_config.get("zai", {}).get("api_key")),
-                "base_url": ai_config.get("zai", {}).get("base_url", "https://api.z.ai/v1"),
+                "model": ai_config.get("zai", {}).get("model", "glm-4.5"),
+                "base_url": ai_config.get("zai", {}).get("base_url", "https://api.z.ai/api/paas/v4/"),
             },
             "claude": {
                 "configured": bool(ai_config.get("claude", {}).get("api_key")),
@@ -1254,6 +1255,7 @@ async def get_settings():
 async def update_ai_settings(
     provider: Optional[str] = Form(default=None),
     zai_api_key: Optional[str] = Form(default=None),
+    zai_model: Optional[str] = Form(default=None),
     zai_base_url: Optional[str] = Form(default=None),
     anthropic_api_key: Optional[str] = Form(default=None),
     claude_model: Optional[str] = Form(default=None),
@@ -1282,6 +1284,8 @@ async def update_ai_settings(
         ai_config["zai"] = {}
     if zai_api_key is not None:
         ai_config["zai"]["api_key"] = zai_api_key if zai_api_key else None
+    if zai_model:
+        ai_config["zai"]["model"] = zai_model
     if zai_base_url:
         ai_config["zai"]["base_url"] = zai_base_url
 
@@ -1314,6 +1318,7 @@ async def update_ai_settings(
         # Also update .env file for environment variable persistence
         _update_env_file({
             "ZAI_API_KEY": ai_config.get("zai", {}).get("api_key"),
+            "ZAI_MODEL": ai_config.get("zai", {}).get("model"),
             "ZAI_BASE_URL": ai_config.get("zai", {}).get("base_url"),
             "ANTHROPIC_API_KEY": ai_config.get("claude", {}).get("api_key"),
             "CLAUDE_MODEL": ai_config.get("claude", {}).get("model"),

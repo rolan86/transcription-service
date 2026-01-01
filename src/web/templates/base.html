@@ -11,7 +11,7 @@
 <body>
     <header class="header">
         <div class="container">
-            <h1 class="logo">Transcription Service</h1>
+            <h1 class="logo">Voice Studio</h1>
             <nav class="nav">
                 <a href="/" class="nav-link {% if active_page == 'transcribe' %}active{% endif %}">Transcribe</a>
                 <a href="/history" class="nav-link {% if active_page == 'history' %}active{% endif %}">History</a>
@@ -89,14 +89,22 @@
 
                 <div class="settings-section provider-settings" data-provider="zai">
                     <h4>z.ai Settings</h4>
-                    <p class="setting-description">OpenAI-compatible API endpoint</p>
+                    <p class="setting-description">Zhipu AI GLM models via OpenAI-compatible API</p>
                     <div class="setting-row">
                         <label for="zai-key">API Key</label>
                         <input type="password" id="zai-key" class="setting-input" placeholder="API Key">
                     </div>
                     <div class="setting-row">
+                        <label for="zai-model">Model</label>
+                        <select id="zai-model" class="setting-select">
+                            <option value="glm-4.5">GLM-4.5 (Recommended)</option>
+                            <option value="glm-4.6">GLM-4.6 (Latest)</option>
+                            <option value="glm-4.7">GLM-4.7 (Flagship)</option>
+                        </select>
+                    </div>
+                    <div class="setting-row">
                         <label for="zai-url">Base URL</label>
-                        <input type="text" id="zai-url" class="setting-input" value="https://api.z.ai/v1" placeholder="https://api.z.ai/v1">
+                        <input type="text" id="zai-url" class="setting-input" value="https://api.z.ai/api/paas/v4/" placeholder="https://api.z.ai/api/paas/v4/">
                     </div>
                 </div>
 
@@ -131,7 +139,7 @@
             </div>
             <div class="modal-actions">
                 <button class="action-btn secondary" id="settings-cancel">Cancel</button>
-                <button class="action-btn" id="settings-save">Save Settings</button>
+                <button type="button" class="action-btn" id="settings-save" onclick="window.saveAISettings();">Save Settings</button>
             </div>
         </div>
     </div>
@@ -152,7 +160,7 @@
 
     <footer class="footer">
         <div class="container">
-            <p>Powered by OpenAI Whisper</p>
+            <p>Voice Studio — Powered by OpenAI Whisper</p>
         </div>
     </footer>
 

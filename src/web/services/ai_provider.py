@@ -35,11 +35,12 @@ class AIProvider(ABC):
 
 
 class ZAIProvider(AIProvider):
-    """z.ai API provider (OpenAI-compatible endpoint)."""
+    """z.ai API provider (OpenAI-compatible endpoint using Zhipu GLM models)."""
 
-    def __init__(self, api_key: Optional[str] = None, base_url: str = "https://api.z.ai/v1"):
+    def __init__(self, api_key: Optional[str] = None, base_url: str = "https://api.z.ai/api/paas/v4/", model: str = "glm-4.5"):
         self.api_key = api_key or os.getenv("ZAI_API_KEY")
-        self.base_url = base_url
+        self.base_url = base_url or os.getenv("ZAI_BASE_URL", "https://api.z.ai/api/paas/v4/")
+        self.model = model or os.getenv("ZAI_MODEL", "glm-4.5")
         self._client = None
 
     @property
@@ -65,7 +66,7 @@ class ZAIProvider(AIProvider):
         messages.append({"role": "user", "content": prompt})
 
         response = await self.client.chat.completions.create(
-            model="default",
+            model=self.model,
             messages=messages,
             max_tokens=4096,
         )
@@ -230,7 +231,8 @@ class AIProviderFactory:
         if provider_type == "zai":
             return ZAIProvider(
                 api_key=config.get("api_key"),
-                base_url=config.get("base_url", "https://api.z.ai/v1")
+                base_url=config.get("base_url", "https://api.z.ai/api/paas/v4/"),
+                model=config.get("model", "glm-4.5")
             )
         elif provider_type == "claude":
             return ClaudeProvider(

@@ -200,23 +200,8 @@ class TranslationService:
                 if not install_result.get('success'):
                     return install_result
 
-            # Get translation
-            installed = self.argos['package'].get_installed_packages()
-            translation = None
-
-            for pkg in installed:
-                if pkg.from_code == from_code and pkg.to_code == to_code:
-                    translation = pkg.get_translation()
-                    break
-
-            if not translation:
-                return {
-                    'success': False,
-                    'error': f'Translation package not available for {from_code} -> {to_code}',
-                }
-
-            # Perform translation
-            translated_text = translation.translate(text)
+            # Perform translation using the modern API
+            translated_text = self.argos['translate'].translate(text, from_code, to_code)
 
             return {
                 'success': True,

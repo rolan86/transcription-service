@@ -184,6 +184,16 @@ class HistoryManager:
             # Cleanup old entries if over limit
             self._cleanup_old_entries(conn)
 
+            # Index for semantic search if available
+            try:
+                from .semantic_search import SemanticSearchService
+                from .embedding_service import is_available as embeddings_available
+                if embeddings_available() and text:
+                    semantic_service = SemanticSearchService(str(self._db_path))
+                    semantic_service.index_transcript(entry_id, text)
+            except Exception as idx_err:
+                print(f"Warning: Failed to index transcript for semantic search: {idx_err}")
+
             return entry_id
         finally:
             conn.close()
@@ -222,6 +232,24 @@ class HistoryManager:
                 ORDER BY created_at DESC
                 LIMIT ? OFFSET ?
             """, (limit, offset))
+
+            rows = cursor.fetchall()
+            return [self._row_to_dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    def get_all_entries(self) -> List[Dict[str, Any]]:
+        """Get all history entries (for reindexing)."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, created_at, audio_filename, duration_seconds,
+                       language, model, transcript_text, word_count,
+                       confidence, speaker_count
+                FROM transcription_history
+                ORDER BY created_at DESC
+            """)
 
             rows = cursor.fetchall()
             return [self._row_to_dict(row) for row in rows]

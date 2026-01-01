@@ -5,28 +5,40 @@
 // State
 let currentSettings = null;
 
-// Elements
-const settingsBtn = document.getElementById('settings-btn');
-const settingsModal = document.getElementById('settings-modal');
-const settingsModalClose = document.getElementById('settings-modal-close');
-const settingsCancel = document.getElementById('settings-cancel');
-const settingsSave = document.getElementById('settings-save');
-const aiStatus = document.getElementById('ai-status');
-const aiProvider = document.getElementById('ai-provider');
-const ollamaModel = document.getElementById('ollama-model');
-const ollamaUrl = document.getElementById('ollama-url');
-const anthropicKey = document.getElementById('anthropic-key');
-const claudeModel = document.getElementById('claude-model');
-const zaiKey = document.getElementById('zai-key');
-const zaiUrl = document.getElementById('zai-url');
-const llamaPath = document.getElementById('llama-path');
-const featuresStatus = document.getElementById('features-status');
-const featureDetails = document.getElementById('feature-details');
+// Elements - initialized after DOM ready
+let settingsBtn, settingsModal, settingsModalClose, settingsCancel, settingsSave;
+let aiStatus, aiProvider, ollamaModel, ollamaUrl;
+let anthropicKey, claudeModel, zaiKey, zaiModel, zaiUrl, llamaPath;
+let featuresStatus, featureDetails;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    // Get element references after DOM is ready
+    settingsBtn = document.getElementById('settings-btn');
+    settingsModal = document.getElementById('settings-modal');
+    settingsModalClose = document.getElementById('settings-modal-close');
+    settingsCancel = document.getElementById('settings-cancel');
+    settingsSave = document.getElementById('settings-save');
+    aiStatus = document.getElementById('ai-status');
+    aiProvider = document.getElementById('ai-provider');
+    ollamaModel = document.getElementById('ollama-model');
+    ollamaUrl = document.getElementById('ollama-url');
+    anthropicKey = document.getElementById('anthropic-key');
+    claudeModel = document.getElementById('claude-model');
+    zaiKey = document.getElementById('zai-key');
+    zaiModel = document.getElementById('zai-model');
+    zaiUrl = document.getElementById('zai-url');
+    llamaPath = document.getElementById('llama-path');
+    featuresStatus = document.getElementById('features-status');
+    featureDetails = document.getElementById('feature-details');
+
     setupSettingsListeners();
     updateStatusBar();
+
+    // Export functions to window for inline handlers
+    window.saveAISettings = saveAISettings;
+    window.openSettings = openSettings;
+    window.updateStatusBar = updateStatusBar;
 });
 
 function setupSettingsListeners() {
@@ -45,7 +57,9 @@ function setupSettingsListeners() {
     });
 
     // Save settings
-    settingsSave?.addEventListener('click', saveSettings);
+    if (settingsSave) {
+        settingsSave.addEventListener('click', saveAISettings);
+    }
 
     // Provider selection change - show/hide appropriate settings
     aiProvider?.addEventListener('change', (e) => {
@@ -140,9 +154,14 @@ function populateSettings(settings) {
         claudeModel.value = ai.claude?.model || 'claude-sonnet-4-20250514';
     }
 
+    // Set z.ai model
+    if (zaiModel) {
+        zaiModel.value = ai.zai?.model || 'glm-4.5';
+    }
+
     // Set z.ai URL
     if (zaiUrl) {
-        zaiUrl.value = ai.zai?.base_url || 'https://api.z.ai/v1';
+        zaiUrl.value = ai.zai?.base_url || 'https://api.z.ai/api/paas/v4/';
     }
 
     // Set Llama path
@@ -294,7 +313,7 @@ function populateOllamaModels(models, currentModel) {
     });
 }
 
-async function saveSettings() {
+async function saveAISettings() {
     try {
         settingsSave.disabled = true;
         settingsSave.textContent = 'Saving...';
@@ -325,6 +344,9 @@ async function saveSettings() {
         // Add z.ai settings
         if (zaiKey?.value) {
             formData.append('zai_api_key', zaiKey.value);
+        }
+        if (zaiModel?.value) {
+            formData.append('zai_model', zaiModel.value);
         }
         if (zaiUrl?.value) {
             formData.append('zai_base_url', zaiUrl.value);
@@ -424,6 +446,4 @@ async function updateStatusBar() {
     }
 }
 
-// Export for use in other modules
-window.openSettings = openSettings;
-window.updateStatusBar = updateStatusBar;
+// Note: Functions are exported to window in DOMContentLoaded callback above

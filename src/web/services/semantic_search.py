@@ -176,7 +176,7 @@ class SemanticSearchService:
                 # Get all embeddings
                 cursor = conn.execute("""
                     SELECT e.id, e.history_id, e.chunk_index, e.chunk_text, e.embedding,
-                           h.filename, h.created_at, h.language, h.duration
+                           h.audio_filename, h.created_at, h.language, h.duration_seconds
                     FROM transcript_embeddings e
                     JOIN transcription_history h ON e.history_id = h.id
                 """)
@@ -206,10 +206,10 @@ class SemanticSearchService:
                                     if similarity > r['similarity']:
                                         results[i] = {
                                             'history_id': history_id,
-                                            'filename': row['filename'],
+                                            'filename': row['audio_filename'],
                                             'created_at': row['created_at'],
                                             'language': row['language'],
-                                            'duration': row['duration'],
+                                            'duration': row['duration_seconds'],
                                             'chunk_text': row['chunk_text'],
                                             'chunk_index': row['chunk_index'],
                                             'similarity': similarity,
@@ -219,10 +219,10 @@ class SemanticSearchService:
                             seen_history_ids.add(history_id)
                             results.append({
                                 'history_id': history_id,
-                                'filename': row['filename'],
+                                'filename': row['audio_filename'],
                                 'created_at': row['created_at'],
                                 'language': row['language'],
-                                'duration': row['duration'],
+                                'duration': row['duration_seconds'],
                                 'chunk_text': row['chunk_text'],
                                 'chunk_index': row['chunk_index'],
                                 'similarity': similarity,
