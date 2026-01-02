@@ -55,20 +55,22 @@
                         </select>
                     </div>
                     <div class="setting-group">
-                        <label for="language-select">Audio Language</label>
-                        <select id="language-select">
-                            <option value="">Auto-detect</option>
-                            <option value="en">English</option>
-                            <option value="es">Spanish</option>
-                            <option value="fr">French</option>
-                            <option value="de">German</option>
-                            <option value="it">Italian</option>
-                            <option value="pt">Portuguese</option>
-                            <option value="ja">Japanese</option>
-                            <option value="ko">Korean</option>
-                            <option value="zh">Chinese</option>
-                            <option value="hi">Hindi</option>
-                        </select>
+                        <label>Audio Language</label>
+                        <div class="searchable-select" id="language-select-container">
+                            <button type="button" class="searchable-select-trigger" id="language-select-trigger">
+                                <span class="selected-text" id="language-selected-text">Auto-detect</span>
+                                <span class="select-arrow">&#9662;</span>
+                            </button>
+                            <div class="searchable-select-dropdown" id="language-dropdown" hidden>
+                                <div class="search-input-container">
+                                    <input type="text" class="search-input" id="language-search"
+                                           placeholder="Search languages..." autocomplete="off">
+                                </div>
+                                <div class="select-options" id="language-options">
+                                    <!-- Options populated by JavaScript -->
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
