@@ -217,7 +217,22 @@ function cacheElements() {
     elements.liveText = document.getElementById('live-text');
     elements.recordingActions = document.getElementById('recording-actions');
     elements.downloadAudioBtn = document.getElementById('download-audio-btn');
+    elements.downloadVideoBtn = document.getElementById('download-video-btn');
     elements.newRecordingBtn = document.getElementById('new-recording-btn');
+    elements.recordHint = document.getElementById('record-hint');
+
+    // Screen recording elements
+    elements.recordingModeSelector = document.getElementById('recording-mode-selector');
+    elements.recordingModeBtns = document.querySelectorAll('.recording-mode-btn');
+    elements.platformBanner = document.getElementById('platform-capability-banner');
+    elements.platformBannerText = document.getElementById('platform-banner-text');
+    elements.bannerDismiss = document.getElementById('banner-dismiss');
+    elements.saveVideoToggle = document.getElementById('save-video-toggle');
+    elements.saveVideoCheckbox = document.getElementById('save-video-checkbox');
+    elements.videoAudioOptions = document.getElementById('video-audio-options');
+    elements.videoAudioRadios = document.querySelectorAll('input[name="video-audio"]');
+    elements.screenPreview = document.getElementById('screen-preview');
+    elements.screenPreviewVideo = document.getElementById('screen-preview-video');
 
     // Modal elements
     modalElements.modal = document.getElementById('filename-modal');
@@ -380,6 +395,18 @@ function setupEventListeners() {
     if (elements.newRecordingBtn) {
         elements.newRecordingBtn.addEventListener('click', resetRecording);
     }
+
+    // Video download button
+    if (elements.downloadVideoBtn) {
+        elements.downloadVideoBtn.addEventListener('click', () => {
+            if (typeof downloadRecordedVideo === 'function') {
+                downloadRecordedVideo();
+            }
+        });
+    }
+
+    // Screen recording mode events
+    setupScreenRecordingEvents();
 
     // Modal events
     modalElements.cancelBtn.addEventListener('click', hideModal);
@@ -1045,6 +1072,19 @@ function resetRecording() {
     const timer = document.getElementById('record-timer');
     if (timer) {
         timer.textContent = '00:00';
+    }
+
+    // Hide screen preview
+    if (elements.screenPreview) {
+        elements.screenPreview.hidden = true;
+    }
+    if (elements.screenPreviewVideo) {
+        elements.screenPreviewVideo.srcObject = null;
+    }
+
+    // Hide video download button
+    if (elements.downloadVideoBtn) {
+        elements.downloadVideoBtn.hidden = true;
     }
 }
 
@@ -2608,6 +2648,128 @@ async function checkSpeakerDetectionStatus() {
     } catch (e) {
         console.warn('Failed to check speaker detection status:', e);
     }
+}
+
+// ============================================================================
+// Screen Recording Mode Functions
+// ============================================================================
+
+/**
+ * Set up screen recording mode event listeners.
+ */
+function setupScreenRecordingEvents() {
+    // Recording mode buttons
+    if (elements.recordingModeBtns) {
+        elements.recordingModeBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                switchRecordingMode(btn.dataset.recordingMode);
+            });
+        });
+    }
+
+    // Banner dismiss button
+    if (elements.bannerDismiss) {
+        elements.bannerDismiss.addEventListener('click', () => {
+            if (elements.platformBanner) {
+                elements.platformBanner.hidden = true;
+            }
+        });
+    }
+
+    // Save video checkbox
+    if (elements.saveVideoCheckbox) {
+        elements.saveVideoCheckbox.addEventListener('change', (e) => {
+            // Show/hide audio source options based on checkbox state
+            if (elements.videoAudioOptions) {
+                elements.videoAudioOptions.hidden = !e.target.checked;
+            }
+            if (typeof setSaveVideoEnabled === 'function') {
+                setSaveVideoEnabled(e.target.checked);
+            }
+        });
+    }
+
+    // Video audio source selection
+    if (elements.videoAudioRadios) {
+        elements.videoAudioRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (typeof setVideoAudioSource === 'function') {
+                    setVideoAudioSource(e.target.value);
+                }
+            });
+        });
+    }
+}
+
+/**
+ * Switch between microphone-only and screen+mic recording modes.
+ * @param {string} mode - 'mic' or 'screen'
+ */
+function switchRecordingMode(mode) {
+    // Update button states
+    if (elements.recordingModeBtns) {
+        elements.recordingModeBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.recordingMode === mode);
+        });
+    }
+
+    // Set the mode in recorder.js
+    if (typeof setRecordingMode === 'function') {
+        setRecordingMode(mode);
+    }
+
+    // Show/hide screen mode specific UI elements
+    const isScreenMode = mode === 'screen';
+
+    // Show/hide save video toggle
+    if (elements.saveVideoToggle) {
+        elements.saveVideoToggle.hidden = !isScreenMode;
+    }
+
+    // Show/hide platform capability banner for screen mode
+    if (isScreenMode) {
+        showPlatformBanner();
+    } else {
+        if (elements.platformBanner) {
+            elements.platformBanner.hidden = true;
+        }
+    }
+
+    // Update hint text
+    if (elements.recordHint) {
+        if (isScreenMode) {
+            elements.recordHint.textContent = 'Click to start recording your screen and microphone';
+        } else {
+            elements.recordHint.textContent = 'Click to start recording from your microphone';
+        }
+    }
+}
+
+/**
+ * Show the platform capability banner with appropriate message.
+ */
+function showPlatformBanner() {
+    if (!elements.platformBanner || !elements.platformBannerText) return;
+
+    // Get platform capabilities from recorder.js
+    let caps = null;
+    if (typeof getPlatformCapabilities === 'function') {
+        caps = getPlatformCapabilities();
+    }
+
+    if (!caps) return;
+
+    // Set banner text and style
+    elements.platformBannerText.textContent = caps.message;
+
+    // Remove existing type classes
+    elements.platformBanner.classList.remove('info', 'warning', 'error');
+
+    // Add appropriate type class
+    elements.platformBanner.classList.add(caps.messageType);
+
+    // Show the banner
+    elements.platformBanner.hidden = false;
 }
 
 // Initialize on DOM ready

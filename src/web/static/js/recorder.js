@@ -2,6 +2,7 @@
  * Audio recorder for real-time transcription.
  * Uses Web Audio API for PCM capture and MediaRecorder for saving.
  * Supports long recordings (1+ hours) with server-side chunk persistence.
+ * Supports screen + mic recording for capturing video calls.
  */
 
 let recorderElements = {};
@@ -25,6 +26,29 @@ let sessionId = null;
 let lastFlushTime = 0;
 const FLUSH_INTERVAL_MS = 30000;  // Flush every 30 seconds
 const MAX_BROWSER_CHUNKS = 500;   // Max chunks to keep in browser memory
+
+// ============================================================================
+// Screen Recording Support
+// ============================================================================
+
+// Recording mode: 'mic' for microphone only, 'screen' for screen + mic
+let recordingMode = 'mic';
+
+// Screen capture streams and tracks
+let screenStream = null;
+let screenVideoTrack = null;
+let screenAudioTrack = null;
+let micStream = null;
+
+// Video recording (optional)
+let videoRecorder = null;
+let videoChunks = [];
+let recordedVideoBlob = null;
+let saveVideoEnabled = false;
+let videoAudioSource = 'mixed';  // 'screen' | 'mixed' - whether to include mic audio in video
+
+// Platform capabilities
+let platformCapabilities = null;
 
 /**
  * Initialize the recorder.
@@ -62,6 +86,12 @@ async function toggleRecording() {
  * Start recording audio.
  */
 async function startRecording() {
+    // Check recording mode and delegate to appropriate function
+    if (recordingMode === 'screen') {
+        return await startScreenModeRecording();
+    }
+
+    // Microphone-only mode (original implementation)
     try {
         // Reset state
         recordedChunks = [];
@@ -69,6 +99,8 @@ async function startRecording() {
         pcmChunks = [];
         sessionId = null;
         lastFlushTime = Date.now();
+        videoChunks = [];
+        recordedVideoBlob = null;
 
         // Request microphone access
         mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -218,6 +250,11 @@ async function stopRecording() {
         mediaStream = null;
     }
 
+    // Clean up screen recording resources if in screen mode
+    if (recordingMode === 'screen') {
+        cleanupScreenRecording();
+    }
+
     // Clean up audio context
     if (audioContext) {
         audioContext.close();
@@ -263,6 +300,547 @@ function arrayBufferToBase64(buffer) {
         binary += String.fromCharCode(bytes[i]);
     }
     return btoa(binary);
+}
+
+// ============================================================================
+// Platform Detection & Capabilities
+// ============================================================================
+
+/**
+ * Detect platform capabilities for screen audio capture.
+ */
+function detectPlatformCapabilities() {
+    const ua = navigator.userAgent;
+
+    // Detect OS
+    let os = 'unknown';
+    if (ua.includes('Windows')) os = 'windows';
+    else if (ua.includes('Mac')) os = 'macos';
+    else if (ua.includes('Linux')) os = 'linux';
+
+    // Detect browser
+    let browser = 'unknown';
+    if (ua.includes('Firefox')) browser = 'firefox';
+    else if (ua.includes('Edg/')) browser = 'edge';
+    else if (ua.includes('Chrome')) browser = 'chrome';
+    else if (ua.includes('Safari')) browser = 'safari';
+
+    // Determine capabilities
+    let systemAudio = false;
+    let tabAudio = false;
+    let message = '';
+    let messageType = 'info'; // 'info', 'warning', 'error'
+
+    if (browser === 'firefox') {
+        // Firefox doesn't support audio in getDisplayMedia
+        systemAudio = false;
+        tabAudio = false;
+        messageType = 'warning';
+        message = 'Firefox: Screen video works, but only microphone audio will be captured (no screen audio). For full audio capture, use Chrome or Edge.';
+    } else if (os === 'windows' && (browser === 'chrome' || browser === 'edge')) {
+        // Windows Chrome/Edge: Full system audio support
+        systemAudio = true;
+        tabAudio = true;
+        messageType = 'info';
+        message = 'Full system audio capture available.';
+    } else if (os === 'macos') {
+        // macOS: Only tab audio without additional software
+        systemAudio = false;
+        tabAudio = true;
+        messageType = 'warning';
+        message = 'macOS: Only browser tab audio will be captured. For full system audio, install BlackHole or similar audio routing software.';
+    } else if (os === 'linux') {
+        // Linux: Only tab audio without additional setup
+        systemAudio = false;
+        tabAudio = true;
+        messageType = 'warning';
+        message = 'Linux: Only browser tab audio will be captured. For full system audio, configure PulseAudio loopback.';
+    } else {
+        // Unknown platform
+        tabAudio = true;
+        messageType = 'info';
+        message = 'Screen audio capture may be limited on this platform.';
+    }
+
+    platformCapabilities = {
+        os,
+        browser,
+        systemAudio,
+        tabAudio,
+        message,
+        messageType,
+        supportsScreenAudio: browser !== 'firefox',
+    };
+
+    return platformCapabilities;
+}
+
+/**
+ * Get the current platform capabilities.
+ */
+function getPlatformCapabilities() {
+    if (!platformCapabilities) {
+        detectPlatformCapabilities();
+    }
+    return platformCapabilities;
+}
+
+// ============================================================================
+// Audio Mixing (Screen + Mic)
+// ============================================================================
+
+/**
+ * Create an audio mixer that combines screen audio and microphone audio.
+ * Uses gain node summing to create a proper mono mix.
+ *
+ * @param {MediaStreamTrack|null} screenAudioTrack - Audio track from screen capture
+ * @param {MediaStreamTrack} micAudioTrack - Audio track from microphone
+ * @returns {Object} Object containing the AudioContext and mixed output stream
+ */
+function createAudioMixer(screenAudioTrackInput, micAudioTrackInput) {
+    // Create audio context at 16kHz for Whisper compatibility
+    const ctx = new AudioContext({ sampleRate: 16000 });
+
+    // Create a single gain node as the mixer (summing node)
+    // Connecting multiple sources to one gain node automatically sums them into mono
+    const mixerGain = ctx.createGain();
+    mixerGain.gain.value = 0.8;  // Slight reduction to prevent clipping when mixing
+
+    // Create destination for mixed output
+    const destination = ctx.createMediaStreamDestination();
+
+    // Create individual gain nodes for volume control
+    const screenGain = ctx.createGain();
+    const micGain = ctx.createGain();
+    screenGain.gain.value = 1.0;
+    micGain.gain.value = 1.0;
+
+    // Connect screen audio if available
+    if (screenAudioTrackInput) {
+        const screenSource = ctx.createMediaStreamSource(
+            new MediaStream([screenAudioTrackInput])
+        );
+        screenSource.connect(screenGain);
+        screenGain.connect(mixerGain);  // Both go to SAME mixer node
+        console.log('Screen audio connected to mixer');
+    }
+
+    // Connect microphone audio
+    const micSource = ctx.createMediaStreamSource(
+        new MediaStream([micAudioTrackInput])
+    );
+    micSource.connect(micGain);
+    micGain.connect(mixerGain);  // Both go to SAME mixer node (sums signals)
+    console.log('Microphone audio connected to mixer');
+
+    // Connect mixer to destination
+    mixerGain.connect(destination);
+
+    return {
+        context: ctx,
+        stream: destination.stream,
+        screenGain,
+        micGain,
+        mixerGain,
+    };
+}
+
+// ============================================================================
+// Screen Recording Functions
+// ============================================================================
+
+/**
+ * Set the recording mode.
+ * @param {string} mode - 'mic' or 'screen'
+ */
+function setRecordingMode(mode) {
+    if (mode === 'mic' || mode === 'screen') {
+        recordingMode = mode;
+        console.log('Recording mode set to:', mode);
+    }
+}
+
+/**
+ * Get the current recording mode.
+ */
+function getRecordingMode() {
+    return recordingMode;
+}
+
+/**
+ * Set whether video saving is enabled.
+ */
+function setSaveVideoEnabled(enabled) {
+    saveVideoEnabled = enabled;
+    console.log('Save video enabled:', enabled);
+}
+
+/**
+ * Check if video saving is enabled.
+ */
+function isSaveVideoEnabled() {
+    return saveVideoEnabled;
+}
+
+/**
+ * Set the video audio source.
+ * @param {string} source - 'screen' or 'mixed'
+ */
+function setVideoAudioSource(source) {
+    if (source === 'screen' || source === 'mixed') {
+        videoAudioSource = source;
+        console.log('Video audio source set to:', source);
+    }
+}
+
+/**
+ * Get the current video audio source setting.
+ */
+function getVideoAudioSource() {
+    return videoAudioSource;
+}
+
+/**
+ * Start screen + microphone recording.
+ */
+async function startScreenModeRecording() {
+    try {
+        // Reset state
+        recordedChunks = [];
+        recordedAudioBlob = null;
+        pcmChunks = [];
+        sessionId = null;
+        lastFlushTime = Date.now();
+        videoChunks = [];
+        recordedVideoBlob = null;
+
+        // Detect platform capabilities
+        const caps = getPlatformCapabilities();
+
+        // Request screen share with audio
+        const displayMediaOptions = {
+            video: {
+                cursor: 'always',
+            },
+            audio: caps.supportsScreenAudio ? {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+            } : false,
+        };
+
+        try {
+            screenStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+        } catch (screenErr) {
+            if (screenErr.name === 'NotAllowedError') {
+                throw new Error('Screen sharing was denied. Please allow screen sharing to continue.');
+            }
+            throw screenErr;
+        }
+
+        // Get tracks from screen stream
+        screenVideoTrack = screenStream.getVideoTracks()[0];
+        screenAudioTrack = screenStream.getAudioTracks()[0] || null;
+
+        // Handle screen share ending (user clicks browser stop button)
+        screenVideoTrack.onended = () => {
+            console.log('Screen share ended by user');
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                stopRecording();
+            }
+        };
+
+        // Show screen preview if element exists
+        const previewVideo = document.getElementById('screen-preview-video');
+        if (previewVideo) {
+            previewVideo.srcObject = screenStream;
+            const previewContainer = document.getElementById('screen-preview');
+            if (previewContainer) {
+                previewContainer.hidden = false;
+            }
+        }
+
+        // Request microphone access
+        micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            }
+        });
+
+        const micAudioTrack = micStream.getAudioTracks()[0];
+
+        // Log what we got
+        console.log('Screen audio track:', screenAudioTrack ? 'available' : 'not available');
+        console.log('Mic audio track:', micAudioTrack ? 'available' : 'not available');
+
+        // Create mixed audio stream
+        const mixer = createAudioMixer(screenAudioTrack, micAudioTrack);
+        audioContext = mixer.context;
+
+        // Get the mixed audio stream
+        const mixedStream = mixer.stream;
+
+        // Use mixed stream as the main media stream
+        mediaStream = mixedStream;
+
+        // Set up source from mixed stream
+        const source = audioContext.createMediaStreamSource(mixedStream);
+
+        // Analyser for level visualization
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+
+        // Script processor for raw PCM data
+        scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+        // Connect to WebSocket
+        wsClient = new TranscriptionWebSocket();
+
+        // Handle session_id from ready message
+        const originalOnReady = wsClient.onReady;
+        wsClient.onReady = (message) => {
+            if (message.session_id) {
+                sessionId = message.session_id;
+                console.log('Recording session started:', sessionId);
+            }
+            if (originalOnReady) originalOnReady(message);
+        };
+
+        await wsClient.connect();
+
+        // Start streaming config with persistence enabled
+        wsClient.send({
+            type: 'start',
+            model: AppState.settings.model,
+            language: AppState.settings.language || null,
+            sample_rate: 16000,
+            enable_persistence: true,
+        });
+
+        // Process audio data for streaming
+        scriptProcessor.onaudioprocess = (event) => {
+            if (wsClient && wsClient.isConnected) {
+                const inputData = event.inputBuffer.getChannelData(0);
+
+                // Convert Float32 to Int16 PCM
+                const pcmData = float32ToInt16(inputData);
+
+                // Store PCM data for flushing to server
+                pcmChunks.push(new Int16Array(pcmData));
+
+                // Convert to base64 and send for real-time transcription
+                const base64 = arrayBufferToBase64(pcmData.buffer);
+                wsClient.send({
+                    type: 'audio',
+                    data: base64,
+                });
+            }
+        };
+
+        source.connect(scriptProcessor);
+        scriptProcessor.connect(audioContext.destination);
+
+        // MediaRecorder for saving mixed audio (WebM format)
+        mediaRecorder = new MediaRecorder(mixedStream, {
+            mimeType: 'audio/webm;codecs=opus'
+        });
+
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                recordedChunks.push(event.data);
+            }
+        };
+
+        mediaRecorder.onstop = () => {
+            recordedAudioBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+            console.log('Recording saved, size:', recordedAudioBlob.size);
+        };
+
+        // Start video recording if enabled
+        if (saveVideoEnabled && screenVideoTrack) {
+            startVideoRecording(screenVideoTrack, screenAudioTrack, mixedStream);
+        }
+
+        // Start audio recording
+        mediaRecorder.start(1000);
+        recordingStartTime = Date.now();
+
+        // Start periodic flush for long recordings
+        startFlushInterval();
+
+        // Update UI
+        recorderElements.recordBtn.classList.add('recording');
+        recorderElements.recordText.textContent = 'Stop';
+        showLiveTranscript();
+
+        // Start timer
+        startTimer();
+
+        // Start audio level visualization
+        visualizeAudioLevel();
+
+    } catch (error) {
+        console.error('Error starting screen recording:', error);
+
+        // Clean up any partially acquired streams
+        cleanupScreenRecording();
+
+        showError('Failed to start screen recording: ' + error.message);
+    }
+}
+
+/**
+ * Start video recording (optional feature).
+ * @param {MediaStreamTrack} videoTrack - The video track to record
+ * @param {MediaStreamTrack|null} screenAudioTrackParam - Screen audio track (may be null)
+ * @param {MediaStream|null} mixedStream - Mixed audio stream (screen + mic)
+ */
+function startVideoRecording(videoTrack, screenAudioTrackParam, mixedStream) {
+    if (!saveVideoEnabled || !videoTrack) return;
+
+    try {
+        // Create stream with video and audio based on user preference
+        const tracks = [videoTrack];
+
+        // Choose audio source based on setting
+        if (videoAudioSource === 'mixed' && mixedStream) {
+            // Use mixed audio (screen + microphone)
+            const mixedAudioTrack = mixedStream.getAudioTracks()[0];
+            if (mixedAudioTrack) {
+                tracks.push(mixedAudioTrack);
+                console.log('Video recording: using mixed audio (screen + mic)');
+            }
+        } else if (screenAudioTrackParam) {
+            // Use screen audio only
+            tracks.push(screenAudioTrackParam);
+            console.log('Video recording: using screen audio only');
+        }
+
+        const videoStream = new MediaStream(tracks);
+
+        // Determine best codec
+        let mimeType = 'video/webm;codecs=vp9';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'video/webm;codecs=vp8';
+        }
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'video/webm';
+        }
+
+        videoRecorder = new MediaRecorder(videoStream, { mimeType });
+        videoChunks = [];
+
+        videoRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+                videoChunks.push(e.data);
+            }
+        };
+
+        videoRecorder.onstop = () => {
+            recordedVideoBlob = new Blob(videoChunks, { type: 'video/webm' });
+            console.log('Video recording saved, size:', recordedVideoBlob.size);
+
+            // Show download button if video was recorded
+            const downloadVideoBtn = document.getElementById('download-video-btn');
+            if (downloadVideoBtn && recordedVideoBlob.size > 0) {
+                downloadVideoBtn.hidden = false;
+            }
+        };
+
+        videoRecorder.start(1000); // Chunk every second
+        console.log('Video recording started with codec:', mimeType);
+
+    } catch (error) {
+        console.error('Error starting video recording:', error);
+        // Continue without video recording
+    }
+}
+
+/**
+ * Stop video recording.
+ */
+function stopVideoRecording() {
+    if (videoRecorder && videoRecorder.state === 'recording') {
+        videoRecorder.stop();
+        videoRecorder = null;
+    }
+}
+
+/**
+ * Download the recorded video file.
+ */
+function downloadRecordedVideo() {
+    if (!recordedVideoBlob) {
+        showError('No video recording available to download');
+        return;
+    }
+
+    // Generate default filename with timestamp
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+    const defaultName = `screen_recording_${timestamp}`;
+
+    // Show modal to get filename
+    showModal('Save Video Recording', defaultName, '.webm', (filename) => {
+        performVideoDownload(filename);
+    });
+}
+
+/**
+ * Perform the actual video download.
+ */
+function performVideoDownload(filename) {
+    const url = URL.createObjectURL(recordedVideoBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+/**
+ * Check if there's a recorded video available.
+ */
+function hasRecordedVideo() {
+    return recordedVideoBlob !== null && recordedVideoBlob.size > 0;
+}
+
+/**
+ * Clean up screen recording resources.
+ */
+function cleanupScreenRecording() {
+    // Stop video recording
+    stopVideoRecording();
+
+    // Stop screen stream
+    if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+    }
+
+    // Stop mic stream
+    if (micStream) {
+        micStream.getTracks().forEach(track => track.stop());
+        micStream = null;
+    }
+
+    // Clear track references
+    screenVideoTrack = null;
+    screenAudioTrack = null;
+
+    // Hide screen preview
+    const previewContainer = document.getElementById('screen-preview');
+    if (previewContainer) {
+        previewContainer.hidden = true;
+    }
+    const previewVideo = document.getElementById('screen-preview-video');
+    if (previewVideo) {
+        previewVideo.srcObject = null;
+    }
 }
 
 /**

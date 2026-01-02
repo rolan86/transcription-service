@@ -181,6 +181,49 @@
 
     <!-- Record Mode -->
     <div id="record-mode" class="mode-content">
+        <!-- Recording Mode Selector -->
+        <div class="recording-mode-selector" id="recording-mode-selector">
+            <button class="recording-mode-btn active" data-recording-mode="mic">
+                <span class="mode-icon">&#127908;</span>
+                <span class="mode-label">Microphone Only</span>
+            </button>
+            <button class="recording-mode-btn" data-recording-mode="screen">
+                <span class="mode-icon">&#128421;</span>
+                <span class="mode-label">Screen + Mic</span>
+            </button>
+        </div>
+
+        <!-- Platform Capability Banner -->
+        <div class="platform-banner" id="platform-capability-banner" hidden>
+            <span class="banner-icon">&#9432;</span>
+            <span class="banner-text" id="platform-banner-text"></span>
+            <button class="banner-dismiss" id="banner-dismiss">&times;</button>
+        </div>
+
+        <!-- Save Video Toggle (shown only in screen mode) -->
+        <div class="save-video-toggle" id="save-video-toggle" hidden>
+            <label class="toggle-label">
+                <input type="checkbox" id="save-video-checkbox">
+                <span class="toggle-text">Save screen recording video</span>
+            </label>
+            <div class="video-audio-options" id="video-audio-options" hidden>
+                <label class="radio-option">
+                    <input type="radio" name="video-audio" value="mixed" checked>
+                    <span>Include microphone audio</span>
+                </label>
+                <label class="radio-option">
+                    <input type="radio" name="video-audio" value="screen">
+                    <span>Screen audio only</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Screen Preview -->
+        <div class="screen-preview-container" id="screen-preview" hidden>
+            <video id="screen-preview-video" autoplay muted playsinline></video>
+            <div class="screen-preview-label">Screen Preview</div>
+        </div>
+
         <div class="record-controls">
             <button class="record-btn" id="record-btn">
                 <span class="record-icon"></span>
@@ -191,11 +234,12 @@
         <div class="audio-level" id="audio-level">
             <div class="level-bar"></div>
         </div>
-        <p class="record-hint">Click to start recording from your microphone</p>
+        <p class="record-hint" id="record-hint">Click to start recording from your microphone</p>
 
         <!-- Recording Actions (shown after recording stops) -->
         <div class="recording-actions" id="recording-actions" hidden>
             <button class="action-btn" id="download-audio-btn">Download Audio</button>
+            <button class="action-btn" id="download-video-btn" hidden>Download Video</button>
             <button class="action-btn secondary" id="new-recording-btn">New Recording</button>
         </div>
     </div>
