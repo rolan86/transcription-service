@@ -1194,6 +1194,11 @@ function resetRecording() {
     hideLiveTranscript();
     hideRecordingActions();
 
+    // Hide continue button and reset session state
+    if (typeof hideContinueButton === 'function') {
+        hideContinueButton();
+    }
+
     // Reset live transcript text
     elements.liveText.textContent = '';
 

@@ -50,6 +50,19 @@ let videoAudioSource = 'mixed';  // 'screen' | 'mixed' - whether to include mic 
 // Platform capabilities
 let platformCapabilities = null;
 
+// Pause/Resume state
+let isPaused = false;
+let pauseStartTime = null;
+let totalPausedTime = 0;
+
+// Chapters state
+let chapters = [];
+let chapterStartTime = 0;  // Start time of current chapter (elapsed ms)
+
+// Session continuation state
+let lastSessionId = null;
+let priorDuration = 0;  // Duration from previous session continuation (ms)
+
 /**
  * Initialize the recorder.
  */
@@ -60,6 +73,11 @@ function initRecorder() {
     recorderElements.recordTimer = document.getElementById('record-timer');
     recorderElements.audioLevel = document.getElementById('audio-level');
     recorderElements.levelBar = recorderElements.audioLevel.querySelector('.level-bar');
+    recorderElements.deferredWarning = document.getElementById('deferred-transcription-warning');
+    recorderElements.pauseBtn = document.getElementById('pause-btn');
+    recorderElements.chapterBtn = document.getElementById('chapter-btn');
+    recorderElements.chapterList = document.getElementById('chapter-list');
+    recorderElements.continueBtn = document.getElementById('continue-recording-btn');
 
     setupRecorderEvents();
 }
@@ -69,6 +87,416 @@ function initRecorder() {
  */
 function setupRecorderEvents() {
     recorderElements.recordBtn.addEventListener('click', toggleRecording);
+    if (recorderElements.pauseBtn) {
+        recorderElements.pauseBtn.addEventListener('click', togglePause);
+    }
+    if (recorderElements.chapterBtn) {
+        recorderElements.chapterBtn.addEventListener('click', addChapter);
+    }
+    if (recorderElements.continueBtn) {
+        recorderElements.continueBtn.addEventListener('click', continueRecording);
+    }
+}
+
+/**
+ * Show deferred transcription warning banner.
+ * @param {string} modelStatus - Current model status
+ */
+function showDeferredTranscriptionWarning(modelStatus) {
+    if (recorderElements.deferredWarning) {
+        recorderElements.deferredWarning.hidden = false;
+        const statusText = recorderElements.deferredWarning.querySelector('.warning-status');
+        if (statusText) {
+            statusText.textContent = modelStatus === 'loading' ?
+                'Model loading...' : 'Model not ready';
+        }
+    }
+    console.warn('Deferred transcription: Model status is', modelStatus);
+}
+
+/**
+ * Hide deferred transcription warning banner.
+ */
+function hideDeferredTranscriptionWarning() {
+    if (recorderElements.deferredWarning) {
+        recorderElements.deferredWarning.hidden = true;
+    }
+}
+
+/**
+ * Toggle pause/resume state.
+ */
+function togglePause() {
+    if (isPaused) {
+        resumeRecording();
+    } else {
+        pauseRecording();
+    }
+}
+
+/**
+ * Pause the recording.
+ * Stops capturing audio but keeps the session active.
+ */
+function pauseRecording() {
+    if (!mediaRecorder || mediaRecorder.state !== 'recording' || isPaused) {
+        return;
+    }
+
+    isPaused = true;
+    pauseStartTime = Date.now();
+
+    // Disconnect script processor to stop sending audio
+    if (scriptProcessor) {
+        scriptProcessor.onaudioprocess = null;
+    }
+
+    // Pause MediaRecorder
+    if (mediaRecorder.state === 'recording') {
+        mediaRecorder.pause();
+    }
+
+    // Send pause message to server
+    if (wsClient && wsClient.isConnected) {
+        wsClient.send({ type: 'pause' });
+    }
+
+    // Pause timer
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+
+    // Update UI
+    updatePauseUI(true);
+
+    console.log('Recording paused');
+}
+
+/**
+ * Resume the recording.
+ */
+function resumeRecording() {
+    if (!mediaRecorder || !isPaused) {
+        return;
+    }
+
+    isPaused = false;
+    if (pauseStartTime) {
+        totalPausedTime += Date.now() - pauseStartTime;
+        pauseStartTime = null;
+    }
+
+    // Reconnect script processor
+    if (scriptProcessor) {
+        scriptProcessor.onaudioprocess = (event) => {
+            if (wsClient && wsClient.isConnected) {
+                const inputData = event.inputBuffer.getChannelData(0);
+                const pcmData = float32ToInt16(inputData);
+                pcmChunks.push(new Int16Array(pcmData));
+                const base64 = arrayBufferToBase64(pcmData.buffer);
+                wsClient.send({ type: 'audio', data: base64 });
+            }
+        };
+    }
+
+    // Resume MediaRecorder
+    if (mediaRecorder.state === 'paused') {
+        mediaRecorder.resume();
+    }
+
+    // Send resume message to server
+    if (wsClient && wsClient.isConnected) {
+        wsClient.send({ type: 'resume' });
+    }
+
+    // Resume timer
+    startTimer();
+
+    // Update UI
+    updatePauseUI(false);
+
+    console.log('Recording resumed');
+}
+
+/**
+ * Update UI for pause/resume state.
+ * @param {boolean} paused - Whether recording is paused
+ */
+function updatePauseUI(paused) {
+    if (recorderElements.pauseBtn) {
+        const pauseText = recorderElements.pauseBtn.querySelector('.pause-text');
+        if (pauseText) {
+            pauseText.textContent = paused ? 'Resume' : 'Pause';
+        }
+        recorderElements.pauseBtn.classList.toggle('paused', paused);
+    }
+
+    // Also update record button to show paused state
+    recorderElements.recordBtn.classList.toggle('paused', paused);
+}
+
+/**
+ * Add a chapter marker at current position.
+ */
+function addChapter() {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        return;
+    }
+
+    // Calculate elapsed time (excluding paused time)
+    const elapsed = Date.now() - recordingStartTime - totalPausedTime;
+
+    // Close previous chapter if exists
+    if (chapters.length > 0) {
+        chapters[chapters.length - 1].endTime = elapsed;
+    }
+
+    // Create new chapter
+    const chapterIndex = chapters.length + 1;
+    const chapter = {
+        index: chapterIndex,
+        title: `Chapter ${chapterIndex}`,
+        startTime: elapsed,
+        endTime: null,  // Will be set when next chapter starts or recording ends
+    };
+
+    chapters.push(chapter);
+
+    // Send chapter message to server
+    if (wsClient && wsClient.isConnected) {
+        wsClient.send({ type: 'chapter', chapter: chapter });
+    }
+
+    // Update UI
+    updateChapterListUI();
+
+    console.log('Chapter added:', chapter);
+}
+
+/**
+ * Update chapter list UI.
+ */
+function updateChapterListUI() {
+    if (!recorderElements.chapterList) return;
+
+    if (chapters.length === 0) {
+        recorderElements.chapterList.hidden = true;
+        return;
+    }
+
+    recorderElements.chapterList.hidden = false;
+
+    const listHtml = chapters.map(ch => {
+        const startFormatted = formatTime(ch.startTime);
+        const endFormatted = ch.endTime ? formatTime(ch.endTime) : 'now';
+        return `
+            <div class="chapter-item" data-index="${ch.index}">
+                <span class="chapter-title">${ch.title}</span>
+                <span class="chapter-time">${startFormatted} - ${endFormatted}</span>
+            </div>
+        `;
+    }).join('');
+
+    recorderElements.chapterList.innerHTML = listHtml;
+}
+
+/**
+ * Format milliseconds as mm:ss.
+ * @param {number} ms - Milliseconds
+ * @returns {string} Formatted time
+ */
+function formatTime(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Reset chapter state.
+ */
+function resetChapters() {
+    chapters = [];
+    chapterStartTime = 0;
+    if (recorderElements.chapterList) {
+        recorderElements.chapterList.innerHTML = '';
+        recorderElements.chapterList.hidden = true;
+    }
+}
+
+/**
+ * Continue a previous recording session.
+ * Appends new audio/transcript to the existing session.
+ */
+async function continueRecording() {
+    if (!lastSessionId) {
+        console.error('No session to continue');
+        return;
+    }
+
+    // Hide continue button
+    if (recorderElements.continueBtn) {
+        recorderElements.continueBtn.hidden = true;
+    }
+
+    // Get current settings
+    const modelSelect = document.getElementById('transcription-model');
+    const languageSelect = document.getElementById('transcription-language');
+    const model = modelSelect?.value || 'base';
+    const language = languageSelect?.value || null;
+
+    try {
+        // Reset some state but keep prior duration
+        recordedChunks = [];
+        recordedAudioBlob = null;
+        pcmChunks = [];
+        lastFlushTime = Date.now();
+        videoChunks = [];
+        recordedVideoBlob = null;
+        isPaused = false;
+        pauseStartTime = null;
+        totalPausedTime = 0;
+        // Don't reset chapters - we'll restore them from the server
+
+        // Request microphone access
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                sampleRate: 16000,
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: true,
+            }
+        });
+
+        // Set up audio context for PCM capture
+        audioContext = new AudioContext({ sampleRate: 16000 });
+        const source = audioContext.createMediaStreamSource(mediaStream);
+
+        // Analyser for level visualization
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+
+        // Script processor for raw PCM data
+        scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+        // Connect to WebSocket with continue message
+        wsClient = new TranscriptionWebSocket();
+
+        // Handle continue_ready message
+        wsClient.onMessage = (message) => {
+            if (message.type === 'continue_ready') {
+                // Restore prior state
+                priorDuration = (message.prior_duration || 0) * 1000; // Convert to ms
+                sessionId = message.session_id;
+
+                // Restore chapters from server
+                if (message.prior_chapters && message.prior_chapters.length > 0) {
+                    chapters = message.prior_chapters;
+                    updateChapterListUI();
+                }
+
+                // Update transcript with prior text
+                if (message.prior_transcript) {
+                    const transcript = document.getElementById('live-transcript');
+                    if (transcript) {
+                        transcript.textContent = message.prior_transcript + '\n\n[Continuing...]\n';
+                    }
+                }
+
+                // Connect script processor
+                scriptProcessor.onaudioprocess = (event) => {
+                    if (wsClient && wsClient.isConnected) {
+                        const inputData = event.inputBuffer.getChannelData(0);
+                        const pcmData = float32ToInt16(inputData);
+                        pcmChunks.push(new Int16Array(pcmData));
+                        const base64 = arrayBufferToBase64(pcmData.buffer);
+                        wsClient.send({ type: 'audio', data: base64 });
+                    }
+                };
+
+                source.connect(scriptProcessor);
+                scriptProcessor.connect(audioContext.destination);
+
+                // Start recording
+                recordingStartTime = Date.now() - priorDuration;
+                startTimer();
+                startFlushInterval();
+
+                // Update UI
+                recorderElements.recordBtn.classList.add('recording');
+                recorderElements.recordText.textContent = 'Stop';
+                if (recorderElements.pauseBtn) {
+                    recorderElements.pauseBtn.hidden = false;
+                }
+                if (recorderElements.chapterBtn) {
+                    recorderElements.chapterBtn.hidden = false;
+                }
+                showLiveTranscript();
+                visualizeAudioLevel();
+            } else if (message.type === 'transcript') {
+                updateTranscript(message);
+            } else if (message.type === 'complete') {
+                handleComplete(message);
+            } else if (message.type === 'error') {
+                showError(message.error);
+            }
+        };
+
+        // Connect and send continue message
+        await wsClient.connect();
+        wsClient.send({
+            type: 'continue',
+            session_id: lastSessionId,
+            model: model,
+            language: language,
+            sample_rate: 16000,
+        });
+
+        // Set up MediaRecorder for audio blob
+        mediaRecorder = new MediaRecorder(mediaStream);
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                recordedChunks.push(event.data);
+            }
+        };
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+            recordedAudioBlob = blob;
+        };
+        mediaRecorder.start(1000);
+
+    } catch (error) {
+        console.error('Error continuing recording:', error);
+        showError('Failed to continue recording: ' + error.message);
+        // Show the continue button again on error
+        if (recorderElements.continueBtn) {
+            recorderElements.continueBtn.hidden = false;
+        }
+    }
+}
+
+/**
+ * Show the continue recording button if session can be continued.
+ * @param {string} sessionId - The session ID to continue
+ */
+function showContinueButton(sessionId) {
+    lastSessionId = sessionId;
+    if (recorderElements.continueBtn && sessionId) {
+        recorderElements.continueBtn.hidden = false;
+    }
+}
+
+/**
+ * Hide the continue recording button.
+ */
+function hideContinueButton() {
+    lastSessionId = null;
+    priorDuration = 0;
+    if (recorderElements.continueBtn) {
+        recorderElements.continueBtn.hidden = true;
+    }
 }
 
 /**
@@ -101,6 +529,13 @@ async function startRecording() {
         lastFlushTime = Date.now();
         videoChunks = [];
         recordedVideoBlob = null;
+        // Reset pause state
+        isPaused = false;
+        pauseStartTime = null;
+        totalPausedTime = 0;
+
+        // Reset chapters
+        resetChapters();
 
         // Request microphone access
         mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -128,12 +563,18 @@ async function startRecording() {
         // Connect to WebSocket
         wsClient = new TranscriptionWebSocket();
 
-        // Handle session_id from ready message
+        // Handle session_id and model status from ready message
         const originalOnReady = wsClient.onReady;
         wsClient.onReady = (message) => {
             if (message.session_id) {
                 sessionId = message.session_id;
                 console.log('Recording session started:', sessionId);
+            }
+            // Handle deferred transcription (model not ready)
+            if (message.deferred_transcription) {
+                showDeferredTranscriptionWarning(message.model_status);
+            } else {
+                hideDeferredTranscriptionWarning();
             }
             if (originalOnReady) originalOnReady(message);
         };
@@ -199,6 +640,12 @@ async function startRecording() {
         // Update UI
         recorderElements.recordBtn.classList.add('recording');
         recorderElements.recordText.textContent = 'Stop';
+        if (recorderElements.pauseBtn) {
+            recorderElements.pauseBtn.hidden = false;
+        }
+        if (recorderElements.chapterBtn) {
+            recorderElements.chapterBtn.hidden = false;
+        }
         showLiveTranscript();
 
         // Start timer
@@ -264,8 +711,27 @@ async function stopRecording() {
 
     // Update UI
     recorderElements.recordBtn.classList.remove('recording');
+    recorderElements.recordBtn.classList.remove('paused');
     recorderElements.recordText.textContent = 'Start Recording';
     recorderElements.levelBar.style.width = '0%';
+    if (recorderElements.pauseBtn) {
+        recorderElements.pauseBtn.hidden = true;
+        recorderElements.pauseBtn.classList.remove('paused');
+    }
+    if (recorderElements.chapterBtn) {
+        recorderElements.chapterBtn.hidden = true;
+    }
+
+    // Close final chapter if exists
+    if (chapters.length > 0) {
+        const elapsed = Date.now() - recordingStartTime - totalPausedTime;
+        chapters[chapters.length - 1].endTime = elapsed;
+    }
+
+    // Reset pause state
+    isPaused = false;
+    pauseStartTime = null;
+    totalPausedTime = 0;
 
     // Reset long recording state
     pcmChunks = [];
@@ -513,6 +979,13 @@ async function startScreenModeRecording() {
         lastFlushTime = Date.now();
         videoChunks = [];
         recordedVideoBlob = null;
+        // Reset pause state
+        isPaused = false;
+        pauseStartTime = null;
+        totalPausedTime = 0;
+
+        // Reset chapters
+        resetChapters();
 
         // Detect platform capabilities
         const caps = getPlatformCapabilities();
@@ -599,12 +1072,18 @@ async function startScreenModeRecording() {
         // Connect to WebSocket
         wsClient = new TranscriptionWebSocket();
 
-        // Handle session_id from ready message
+        // Handle session_id and model status from ready message
         const originalOnReady = wsClient.onReady;
         wsClient.onReady = (message) => {
             if (message.session_id) {
                 sessionId = message.session_id;
                 console.log('Recording session started:', sessionId);
+            }
+            // Handle deferred transcription (model not ready)
+            if (message.deferred_transcription) {
+                showDeferredTranscriptionWarning(message.model_status);
+            } else {
+                hideDeferredTranscriptionWarning();
             }
             if (originalOnReady) originalOnReady(message);
         };
@@ -674,6 +1153,12 @@ async function startScreenModeRecording() {
         // Update UI
         recorderElements.recordBtn.classList.add('recording');
         recorderElements.recordText.textContent = 'Stop';
+        if (recorderElements.pauseBtn) {
+            recorderElements.pauseBtn.hidden = false;
+        }
+        if (recorderElements.chapterBtn) {
+            recorderElements.chapterBtn.hidden = false;
+        }
         showLiveTranscript();
 
         // Start timer
@@ -893,10 +1378,11 @@ function getRecordedAudioBlob() {
 /**
  * Start the recording timer.
  * Supports HH:MM:SS format for recordings over 1 hour.
+ * Accounts for paused time.
  */
 function startTimer() {
     timerInterval = setInterval(() => {
-        const elapsed = Date.now() - recordingStartTime;
+        const elapsed = Date.now() - recordingStartTime - totalPausedTime;
         const hours = Math.floor(elapsed / 3600000);
         const minutes = Math.floor((elapsed % 3600000) / 60000);
         const seconds = Math.floor((elapsed % 60000) / 1000);

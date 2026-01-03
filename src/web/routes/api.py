@@ -6,7 +6,7 @@ import asyncio
 import math
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
 from fastapi.responses import JSONResponse
 
@@ -37,6 +37,20 @@ async def health_check():
         version="1.0.0",
         timestamp=datetime.now(),
     )
+
+
+@router.get("/whisper/status")
+async def get_whisper_status():
+    """Get Whisper model loading status."""
+    from poc.transcription_engine import TranscriptionEngine
+
+    status = TranscriptionEngine.get_model_status()
+    return {
+        "model_ready": status['status'] == 'ready',
+        "status": status['status'],
+        "error": status['error'],
+        "model_size": status['model_size'],
+    }
 
 
 @router.get("/info", response_model=InfoResponse)
@@ -513,6 +527,95 @@ async def clear_history():
     history_manager = HistoryManager()
     count = history_manager.clear_history()
     return {"message": f"Cleared {count} history entries"}
+
+
+class MergeRequest(BaseModel):
+    """Request body for merging history entries."""
+    entry_ids: List[int]
+    add_separators: bool = True
+    merged_name: Optional[str] = None
+
+
+@router.post("/history/merge")
+async def merge_history_entries(request: MergeRequest):
+    """
+    Merge multiple history entries into a single new entry.
+
+    Args:
+        request: MergeRequest with entry_ids, add_separators, and merged_name
+    """
+    entry_ids = request.entry_ids
+    add_separators = request.add_separators
+    merged_name = request.merged_name
+
+    if entry_ids is None or len(entry_ids) == 0:
+        raise HTTPException(status_code=400, detail="entry_ids is required")
+
+    if len(entry_ids) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 entries required for merge")
+
+    history_manager = HistoryManager()
+
+    # Fetch all entries
+    entries = []
+    total_words = 0
+    total_duration = 0
+
+    for entry_id in entry_ids:
+        entry = history_manager.get_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found")
+        entries.append(entry)
+        total_words += entry.get('word_count', 0)
+        if entry.get('duration'):
+            total_duration += entry['duration']
+
+    # Build merged transcript
+    merged_text_parts = []
+    for i, entry in enumerate(entries):
+        if add_separators and i > 0:
+            merged_text_parts.append("\n\n" + "=" * 40 + "\n\n")
+
+        # Add header for each section
+        filename = entry.get('audio_filename', f'Entry {entry["id"]}')
+        date_str = entry.get('created_at', '')
+        if add_separators:
+            merged_text_parts.append(f"[{filename}]\n")
+
+        # Add transcript text
+        text = entry.get('transcript_text', '')
+        merged_text_parts.append(text)
+
+    merged_text = "".join(merged_text_parts)
+
+    # Create merged entry name
+    if not merged_name:
+        merged_name = f"Merged_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    # Save as new entry
+    result = {
+        "text": merged_text,
+        "word_count": total_words,
+        "duration": total_duration,
+        "confidence": 0.9,
+        "language": entries[0].get('language') if entries else None,
+        "metadata": {
+            "merged_from": entry_ids,
+            "merge_date": datetime.now().isoformat(),
+        }
+    }
+
+    new_entry_id = history_manager.save_transcription(
+        result=result,
+        filename=merged_name
+    )
+
+    return {
+        "message": f"Successfully merged {len(entries)} entries",
+        "new_entry_id": new_entry_id,
+        "merged_name": merged_name,
+        "total_words": total_words,
+    }
 
 
 # ============================================================================

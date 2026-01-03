@@ -37,6 +37,11 @@ class RecordingSession:
     chunks: List[SessionChunk] = field(default_factory=list)
     total_duration: float = 0.0
     _temp_dir: Optional[str] = None
+    # For session continuation
+    is_paused: bool = False
+    paused_at: Optional[float] = None
+    transcript_text: str = ""
+    chapters: List[Dict] = field(default_factory=list)
 
     def __post_init__(self):
         """Create temp directory for session."""
@@ -178,6 +183,45 @@ class RecordingSession:
             return f"{hours:02d}:{minutes:02d}:{secs:02d}"
         return f"{minutes:02d}:{secs:02d}"
 
+    def pause_session(self, transcript: str = "") -> None:
+        """
+        Pause the session for potential continuation.
+
+        Args:
+            transcript: Current transcript text to save
+        """
+        self.is_paused = True
+        self.paused_at = time.time()
+        if transcript:
+            self.transcript_text = transcript
+
+    def resume_session(self) -> Dict[str, Any]:
+        """
+        Resume a paused session.
+
+        Returns:
+            Dict with prior_duration and prior_transcript
+        """
+        self.is_paused = False
+        self.paused_at = None
+        return {
+            'prior_duration': self.total_duration,
+            'prior_duration_formatted': self._format_duration(self.total_duration),
+            'prior_transcript': self.transcript_text,
+            'prior_chapters': self.chapters,
+        }
+
+    def get_continuation_state(self) -> Dict[str, Any]:
+        """Get state needed to continue recording."""
+        return {
+            'session_id': self.session_id,
+            'total_duration': self.total_duration,
+            'duration_formatted': self._format_duration(self.total_duration),
+            'transcript': self.transcript_text,
+            'chapters': self.chapters,
+            'chunk_count': len(self.chunks),
+        }
+
 
 class SessionManager:
     """
@@ -236,6 +280,39 @@ class SessionManager:
             session = self._sessions.pop(session_id, None)
             if session:
                 session.cleanup()
+
+    def pause_session(self, session_id: str, transcript: str = "") -> Optional[RecordingSession]:
+        """
+        Pause a session for potential continuation instead of removing it.
+
+        Args:
+            session_id: Session ID to pause
+            transcript: Current transcript text to save
+
+        Returns:
+            The paused session or None if not found
+        """
+        with self._session_lock:
+            session = self._sessions.get(session_id)
+            if session:
+                session.pause_session(transcript)
+            return session
+
+    def get_paused_session(self, session_id: str) -> Optional[RecordingSession]:
+        """
+        Get a paused session for continuation.
+
+        Args:
+            session_id: Session ID to retrieve
+
+        Returns:
+            The paused session or None
+        """
+        with self._session_lock:
+            session = self._sessions.get(session_id)
+            if session and session.is_paused:
+                return session
+            return None
 
     def cleanup_old_sessions(self, max_age_seconds: int = 3600) -> int:
         """

@@ -12,7 +12,28 @@ import torch
 
 class TranscriptionEngine:
     """Handles speech-to-text transcription using Whisper."""
-    
+
+    # Class-level model status tracking
+    _model_status = 'not_loaded'  # 'not_loaded', 'loading', 'ready', 'error'
+    _model_error = None
+    _current_model_size = None
+
+    @classmethod
+    def get_model_status(cls) -> Dict:
+        """Get current model loading status."""
+        return {
+            'status': cls._model_status,
+            'error': cls._model_error,
+            'model_size': cls._current_model_size,
+        }
+
+    @classmethod
+    def reset_model_status(cls):
+        """Reset model status (useful for testing or re-initialization)."""
+        cls._model_status = 'not_loaded'
+        cls._model_error = None
+        cls._current_model_size = None
+
     def __init__(self, model_size: str = "base", whisper_config: Optional[Dict] = None):
         """
         Initialize transcription engine.
@@ -51,20 +72,27 @@ class TranscriptionEngine:
     def load_model(self) -> Tuple[bool, str]:
         """
         Load Whisper model.
-        
+
         Returns:
             Tuple of (success, message)
         """
+        TranscriptionEngine._model_status = 'loading'
+        TranscriptionEngine._current_model_size = self.model_size
+        TranscriptionEngine._model_error = None
+
         try:
             print(f"Loading Whisper model '{self.model_size}' on {self.device}...")
             start_time = time.time()
-            
+
             self.model = whisper.load_model(self.model_size, device=self.device)
-            
+
             load_time = time.time() - start_time
+            TranscriptionEngine._model_status = 'ready'
             return True, f"Model loaded successfully in {load_time:.2f} seconds"
-            
+
         except Exception as e:
+            TranscriptionEngine._model_status = 'error'
+            TranscriptionEngine._model_error = str(e)
             return False, f"Failed to load model: {str(e)}"
     
     def transcribe_audio(self, audio_path: str, language: Optional[str] = None,

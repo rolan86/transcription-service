@@ -30,6 +30,7 @@
         <span class="batch-count" id="batch-count">0 selected</span>
         <button class="action-btn secondary" id="batch-select-all">Select All</button>
         <button class="action-btn" id="batch-export">Export Selected</button>
+        <button class="action-btn continue" id="batch-merge">Merge Selected</button>
         <button class="action-btn danger" id="batch-delete">Delete Selected</button>
         <button class="action-btn secondary" id="batch-cancel">Cancel</button>
     </div>
@@ -96,6 +97,34 @@
             <div class="modal-actions">
                 <button class="action-btn secondary" id="confirm-cancel">Cancel</button>
                 <button class="action-btn danger" id="confirm-clear">Clear All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Merge Modal -->
+    <div class="modal-overlay" id="merge-modal" hidden>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 class="modal-title">Merge Transcriptions</h3>
+                <button class="modal-close" id="merge-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="merge-instructions">Drag to reorder the transcriptions. They will be merged in the order shown below.</p>
+                <div class="merge-list" id="merge-list"></div>
+                <div class="merge-options">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="merge-add-separators" checked>
+                        Add separator lines between transcriptions
+                    </label>
+                    <div class="merge-name-field">
+                        <label for="merge-name">Merged file name:</label>
+                        <input type="text" id="merge-name" placeholder="Merged_Transcription" value="">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn secondary" id="merge-cancel">Cancel</button>
+                <button class="action-btn" id="merge-confirm">Merge Transcriptions</button>
             </div>
         </div>
     </div>

@@ -34,6 +34,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setupSettingsListeners();
     updateStatusBar();
+    startBackendHealthPolling();
+    startWhisperStatusPolling();
 
     // Export functions to window for inline handlers
     window.saveAISettings = saveAISettings;
@@ -443,6 +445,116 @@ async function updateStatusBar() {
         console.warn('Failed to update status bar:', error);
         statusDot.className = 'status-dot unavailable';
         statusText.textContent = 'AI: Error';
+    }
+}
+
+// Backend health check polling
+const BACKEND_HEALTH_INTERVAL = 10000; // 10 seconds
+let backendHealthInterval = null;
+
+/**
+ * Update the backend connection status in the status bar.
+ */
+async function updateBackendStatus() {
+    const statusDot = document.getElementById('backend-status-dot');
+    const statusText = document.getElementById('backend-status-text');
+
+    if (!statusDot || !statusText) return;
+
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+
+        const response = await fetch('/api/health', { signal: controller.signal });
+        clearTimeout(timeout);
+
+        if (response.ok) {
+            const data = await response.json();
+            statusDot.className = 'status-dot available';
+            statusText.textContent = 'Backend: Connected';
+        } else {
+            throw new Error('Health check failed');
+        }
+    } catch (error) {
+        statusDot.className = 'status-dot unavailable';
+        statusText.textContent = 'Backend: Disconnected';
+    }
+}
+
+/**
+ * Start polling for backend health status.
+ */
+function startBackendHealthPolling() {
+    updateBackendStatus();
+    backendHealthInterval = setInterval(updateBackendStatus, BACKEND_HEALTH_INTERVAL);
+}
+
+/**
+ * Stop polling for backend health status.
+ */
+function stopBackendHealthPolling() {
+    if (backendHealthInterval) {
+        clearInterval(backendHealthInterval);
+        backendHealthInterval = null;
+    }
+}
+
+// Whisper model status polling
+const WHISPER_STATUS_INTERVAL = 10000; // 10 seconds
+let whisperStatusInterval = null;
+
+/**
+ * Update the Whisper model status in the status bar.
+ */
+async function updateWhisperStatus() {
+    const statusDot = document.getElementById('whisper-status-dot');
+    const statusText = document.getElementById('whisper-status-text');
+
+    if (!statusDot || !statusText) return;
+
+    try {
+        const response = await fetch('/api/whisper/status');
+        if (response.ok) {
+            const data = await response.json();
+
+            if (data.model_ready) {
+                statusDot.className = 'status-dot available';
+                statusText.textContent = `Whisper: Ready (${data.model_size || 'base'})`;
+            } else if (data.status === 'loading') {
+                statusDot.className = 'status-dot checking';
+                statusText.textContent = 'Whisper: Loading...';
+            } else if (data.status === 'error') {
+                statusDot.className = 'status-dot unavailable';
+                statusText.textContent = 'Whisper: Error';
+                statusDot.title = data.error || 'Model loading failed';
+            } else {
+                statusDot.className = 'status-dot';
+                statusText.textContent = 'Whisper: Not loaded';
+            }
+        } else {
+            throw new Error('Failed to fetch status');
+        }
+    } catch (error) {
+        statusDot.className = 'status-dot unavailable';
+        statusText.textContent = 'Whisper: Error';
+    }
+}
+
+/**
+ * Start polling for Whisper model status.
+ */
+function startWhisperStatusPolling() {
+    updateWhisperStatus();
+    whisperStatusInterval = setInterval(updateWhisperStatus, WHISPER_STATUS_INTERVAL);
+}
+
+/**
+ * Stop polling for Whisper model status.
+ */
+function stopWhisperStatusPolling() {
+    if (whisperStatusInterval) {
+        clearInterval(whisperStatusInterval);
+        whisperStatusInterval = null;
     }
 }
 

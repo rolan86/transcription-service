@@ -55,8 +55,17 @@
         batchCount: document.getElementById('batch-count'),
         batchSelectAll: document.getElementById('batch-select-all'),
         batchExport: document.getElementById('batch-export'),
+        batchMerge: document.getElementById('batch-merge'),
         batchDelete: document.getElementById('batch-delete'),
         batchCancel: document.getElementById('batch-cancel'),
+        // Merge modal elements
+        mergeModal: document.getElementById('merge-modal'),
+        mergeModalClose: document.getElementById('merge-modal-close'),
+        mergeList: document.getElementById('merge-list'),
+        mergeAddSeparators: document.getElementById('merge-add-separators'),
+        mergeName: document.getElementById('merge-name'),
+        mergeCancel: document.getElementById('merge-cancel'),
+        mergeConfirm: document.getElementById('merge-confirm'),
     };
 
     // Batch selection state
@@ -159,8 +168,27 @@
         if (elements.batchDelete) {
             elements.batchDelete.addEventListener('click', deleteSelectedEntries);
         }
+        if (elements.batchMerge) {
+            elements.batchMerge.addEventListener('click', showMergeModal);
+        }
         if (elements.batchCancel) {
             elements.batchCancel.addEventListener('click', cancelBatchSelection);
+        }
+
+        // Merge modal events
+        if (elements.mergeModalClose) {
+            elements.mergeModalClose.addEventListener('click', hideMergeModal);
+        }
+        if (elements.mergeCancel) {
+            elements.mergeCancel.addEventListener('click', hideMergeModal);
+        }
+        if (elements.mergeConfirm) {
+            elements.mergeConfirm.addEventListener('click', mergeSelectedEntries);
+        }
+        if (elements.mergeModal) {
+            elements.mergeModal.addEventListener('click', (e) => {
+                if (e.target === elements.mergeModal) hideMergeModal();
+            });
         }
     }
 
@@ -724,5 +752,200 @@
         updateBatchUI();
         loadStats();
         loadHistory();
+    }
+
+    // ========================================================================
+    // Merge Functions
+    // ========================================================================
+
+    // State for merge ordering
+    let mergeOrder = [];
+
+    async function showMergeModal() {
+        if (selectedEntries.size < 2) {
+            alert('Please select at least 2 transcriptions to merge.');
+            return;
+        }
+
+        // Fetch entry details for all selected entries
+        mergeOrder = [];
+        for (const id of selectedEntries) {
+            try {
+                const response = await fetch(`/api/history/${id}`);
+                if (response.ok) {
+                    const entry = await response.json();
+                    mergeOrder.push({
+                        id: entry.id,
+                        filename: entry.audio_filename,
+                        date: new Date(entry.created_at),
+                        word_count: entry.word_count,
+                    });
+                }
+            } catch (e) {
+                console.error('Error fetching entry:', e);
+            }
+        }
+
+        // Sort by date by default
+        mergeOrder.sort((a, b) => a.date - b.date);
+
+        // Render merge list
+        renderMergeList();
+
+        // Set default merge name
+        if (elements.mergeName) {
+            elements.mergeName.value = `Merged_${new Date().toISOString().slice(0, 10)}`;
+        }
+
+        elements.mergeModal.hidden = false;
+    }
+
+    function hideMergeModal() {
+        elements.mergeModal.hidden = true;
+        mergeOrder = [];
+    }
+
+    function renderMergeList() {
+        if (!elements.mergeList) return;
+
+        const html = mergeOrder.map((entry, index) => {
+            const dateStr = entry.date.toLocaleDateString() + ' ' + entry.date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            return `
+                <div class="merge-item" data-id="${entry.id}" draggable="true">
+                    <span class="merge-handle">&#8597;</span>
+                    <span class="merge-order">${index + 1}</span>
+                    <span class="merge-filename">${escapeHtml(entry.filename)}</span>
+                    <span class="merge-date">${dateStr}</span>
+                    <span class="merge-words">${entry.word_count} words</span>
+                </div>
+            `;
+        }).join('');
+
+        elements.mergeList.innerHTML = html;
+
+        // Add drag and drop functionality
+        setupMergeDragDrop();
+    }
+
+    function setupMergeDragDrop() {
+        const items = elements.mergeList.querySelectorAll('.merge-item');
+        let draggedItem = null;
+
+        items.forEach(item => {
+            item.addEventListener('dragstart', (e) => {
+                draggedItem = item;
+                item.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+                draggedItem = null;
+                updateMergeOrder();
+            });
+
+            item.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                const rect = item.getBoundingClientRect();
+                const midY = rect.top + rect.height / 2;
+                if (e.clientY < midY) {
+                    item.classList.add('drag-above');
+                    item.classList.remove('drag-below');
+                } else {
+                    item.classList.add('drag-below');
+                    item.classList.remove('drag-above');
+                }
+            });
+
+            item.addEventListener('dragleave', () => {
+                item.classList.remove('drag-above', 'drag-below');
+            });
+
+            item.addEventListener('drop', (e) => {
+                e.preventDefault();
+                item.classList.remove('drag-above', 'drag-below');
+                if (draggedItem && draggedItem !== item) {
+                    const rect = item.getBoundingClientRect();
+                    const midY = rect.top + rect.height / 2;
+                    if (e.clientY < midY) {
+                        elements.mergeList.insertBefore(draggedItem, item);
+                    } else {
+                        elements.mergeList.insertBefore(draggedItem, item.nextSibling);
+                    }
+                }
+            });
+        });
+    }
+
+    function updateMergeOrder() {
+        const items = elements.mergeList.querySelectorAll('.merge-item');
+        const newOrder = [];
+        items.forEach((item, index) => {
+            const id = parseInt(item.dataset.id);
+            const entry = mergeOrder.find(e => e.id === id);
+            if (entry) {
+                newOrder.push(entry);
+            }
+            // Update order number display
+            const orderSpan = item.querySelector('.merge-order');
+            if (orderSpan) {
+                orderSpan.textContent = index + 1;
+            }
+        });
+        mergeOrder = newOrder;
+    }
+
+    async function mergeSelectedEntries() {
+        if (mergeOrder.length < 2) {
+            alert('Please select at least 2 transcriptions to merge.');
+            return;
+        }
+
+        const addSeparators = elements.mergeAddSeparators?.checked ?? true;
+        const mergeName = elements.mergeName?.value || `Merged_${Date.now()}`;
+        const entryIds = mergeOrder.map(e => e.id);
+
+        // Disable confirm button
+        if (elements.mergeConfirm) {
+            elements.mergeConfirm.disabled = true;
+            elements.mergeConfirm.textContent = 'Merging...';
+        }
+
+        try {
+            const response = await fetch('/api/history/merge', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    entry_ids: entryIds,
+                    add_separators: addSeparators,
+                    merged_name: mergeName,
+                }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Merge failed');
+            }
+
+            const result = await response.json();
+            alert(`Successfully merged ${entryIds.length} transcriptions!`);
+
+            hideMergeModal();
+            cancelBatchSelection();
+            loadStats();
+            loadHistory();
+
+        } catch (error) {
+            console.error('Error merging entries:', error);
+            alert('Failed to merge: ' + error.message);
+        } finally {
+            if (elements.mergeConfirm) {
+                elements.mergeConfirm.disabled = false;
+                elements.mergeConfirm.textContent = 'Merge Transcriptions';
+            }
+        }
     }
 })();

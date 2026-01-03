@@ -101,10 +101,72 @@ async def websocket_transcribe(websocket: WebSocket):
                 else:
                     session_id = None
 
+                # Check model status for graceful degradation
+                from poc.transcription_engine import TranscriptionEngine
+                model_status = TranscriptionEngine.get_model_status()
+                model_ready = model_status['status'] == 'ready'
+
                 await websocket.send_json({
                     "type": "ready",
                     "message": f"Transcriber initialized with model '{current_model}'",
                     "session_id": session_id,
+                    "model_ready": model_ready,
+                    "model_status": model_status['status'],
+                    "deferred_transcription": not model_ready,
+                })
+
+            elif msg_type == "continue":
+                # Continue a previously paused session
+                continue_session_id = message.get("session_id")
+
+                if not continue_session_id:
+                    await websocket.send_json({
+                        "type": "error",
+                        "error": "No session_id provided for continue",
+                    })
+                    continue
+
+                # Get the paused session
+                paused_session = session_manager.get_paused_session(continue_session_id)
+                if not paused_session:
+                    await websocket.send_json({
+                        "type": "error",
+                        "error": "Session not found or not paused",
+                    })
+                    continue
+
+                # Resume the session
+                continuation_state = paused_session.resume_session()
+                session = paused_session
+
+                # Initialize transcriber
+                current_model = message.get("model", "base")
+                current_language = message.get("language")
+                sample_rate = message.get("sample_rate", 16000)
+                chunk_duration = message.get("chunk_duration", 5.0)
+
+                transcriber = StreamingTranscriber(
+                    model_size=current_model,
+                    language=current_language,
+                    sample_rate=sample_rate,
+                    chunk_duration=chunk_duration,
+                )
+
+                # Check model status
+                from poc.transcription_engine import TranscriptionEngine
+                model_status = TranscriptionEngine.get_model_status()
+                model_ready = model_status['status'] == 'ready'
+
+                await websocket.send_json({
+                    "type": "continue_ready",
+                    "message": f"Continuing session '{continue_session_id}'",
+                    "session_id": continue_session_id,
+                    "prior_duration": continuation_state['prior_duration'],
+                    "prior_duration_formatted": continuation_state['prior_duration_formatted'],
+                    "prior_transcript": continuation_state['prior_transcript'],
+                    "prior_chapters": continuation_state['prior_chapters'],
+                    "model_ready": model_ready,
+                    "model_status": model_status['status'],
                 })
 
             elif msg_type == "audio" and transcriber:
@@ -182,17 +244,24 @@ async def websocket_transcribe(websocket: WebSocket):
                     # Process final transcription with keep-alive pings
                     final_result = await finalize_with_keepalive(websocket, transcriber)
 
+                    final_text = final_result.get("text", "")
+
+                    # Pause session for potential continuation
+                    if session:
+                        session_manager.pause_session(session.session_id, final_text)
+
                     await websocket.send_json({
                         "type": "complete",
-                        "text": final_result.get("text", ""),
+                        "text": final_text,
                         "is_final": True,
                         "segments": final_result.get("segments", []),
                         "session_duration": session.total_duration if session else 0,
+                        "session_id": session.session_id if session else None,
+                        "can_continue": session is not None,
                     })
 
                     # Save to history
                     try:
-                        final_text = final_result.get("text", "")
                         if final_text.strip():
                             history_manager = HistoryManager()
                             # Create result dict matching save_transcription format
@@ -229,6 +298,29 @@ async def websocket_transcribe(websocket: WebSocket):
 
                 break
 
+            elif msg_type == "pause":
+                # Client is pausing recording
+                # No server-side action needed, just acknowledge
+                await websocket.send_json({"type": "pause_ack"})
+
+            elif msg_type == "resume":
+                # Client is resuming recording
+                # No server-side action needed, just acknowledge
+                await websocket.send_json({"type": "resume_ack"})
+
+            elif msg_type == "chapter":
+                # Client is adding a chapter marker
+                chapter = message.get("chapter", {})
+                # Store chapter in session if available
+                if session:
+                    if not hasattr(session, 'chapters'):
+                        session.chapters = []
+                    session.chapters.append(chapter)
+                await websocket.send_json({
+                    "type": "chapter_ack",
+                    "chapter": chapter,
+                })
+
             elif msg_type == "ping":
                 # Keep-alive ping
                 await websocket.send_json({"type": "pong"})
@@ -252,5 +344,6 @@ async def websocket_transcribe(websocket: WebSocket):
     finally:
         if transcriber:
             transcriber.cleanup()
-        if session:
+        # Only remove session if it's not paused (for continuation)
+        if session and not session.is_paused:
             session_manager.remove_session(session.session_id)

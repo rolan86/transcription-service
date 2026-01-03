@@ -248,22 +248,42 @@
             <div class="screen-preview-label">Screen Preview</div>
         </div>
 
+        <!-- Deferred Transcription Warning -->
+        <div class="deferred-warning" id="deferred-transcription-warning" hidden>
+            <span class="warning-icon">&#9888;</span>
+            <span class="warning-text">
+                <strong class="warning-status">Model loading...</strong>
+                — Audio will be stored and transcribed when ready
+            </span>
+        </div>
+
         <div class="record-controls">
             <button class="record-btn" id="record-btn">
                 <span class="record-icon"></span>
                 <span class="record-text">Start Recording</span>
+            </button>
+            <button class="pause-btn" id="pause-btn" hidden title="Pause Recording">
+                <span class="pause-icon">&#10074;&#10074;</span>
+                <span class="pause-text">Pause</span>
+            </button>
+            <button class="chapter-btn" id="chapter-btn" hidden title="Add Chapter Marker">
+                <span class="chapter-icon">&#128278;</span>
+                <span class="chapter-text">Add Chapter</span>
             </button>
             <div class="record-timer" id="record-timer">00:00</div>
         </div>
         <div class="audio-level" id="audio-level">
             <div class="level-bar"></div>
         </div>
+        <!-- Chapter List -->
+        <div class="chapter-list" id="chapter-list" hidden></div>
         <p class="record-hint" id="record-hint">Click to start recording from your microphone</p>
 
         <!-- Recording Actions (shown after recording stops) -->
         <div class="recording-actions" id="recording-actions" hidden>
             <button class="action-btn" id="download-audio-btn">Download Audio</button>
             <button class="action-btn" id="download-video-btn" hidden>Download Video</button>
+            <button class="action-btn continue" id="continue-recording-btn" hidden title="Continue from where you left off">Continue Recording</button>
             <button class="action-btn secondary" id="new-recording-btn">New Recording</button>
         </div>
     </div>

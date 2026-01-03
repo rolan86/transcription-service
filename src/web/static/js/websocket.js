@@ -200,6 +200,13 @@ class TranscriptionWebSocket {
             showRecordingActions();
         }
 
+        // Show continue recording button if session can be continued
+        if (message.can_continue && message.session_id) {
+            if (typeof showContinueButton === 'function') {
+                showContinueButton(message.session_id);
+            }
+        }
+
         // Now close the WebSocket connection
         this.close();
     }
