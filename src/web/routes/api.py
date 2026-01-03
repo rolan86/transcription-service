@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from ..services.transcription_api import TranscriptionAPI
 from ..services.job_manager import JobManager, JobStatus, run_transcription_job
