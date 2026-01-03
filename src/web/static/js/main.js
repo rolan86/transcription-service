@@ -425,6 +425,12 @@ function cacheElements() {
     analysisElements.copyBtn = document.getElementById('copy-analysis-btn');
     analysisElements.exportBtn = document.getElementById('export-analysis-btn');
     analysisElements.closeBtn = document.getElementById('close-analysis-btn');
+
+    // Advanced settings elements
+    elements.maxFileSize = document.getElementById('max-file-size');
+    elements.saveAdvancedSettings = document.getElementById('save-advanced-settings');
+    elements.settingsStatus = document.getElementById('settings-status');
+    elements.advancedSummary = document.getElementById('advanced-summary');
 }
 
 /**
@@ -678,6 +684,17 @@ function setupEventListeners() {
 
     // Check speaker detection availability
     checkSpeakerDetectionStatus();
+
+    // Advanced settings events
+    if (elements.saveAdvancedSettings) {
+        elements.saveAdvancedSettings.addEventListener('click', saveAdvancedSettings);
+    }
+    if (elements.maxFileSize) {
+        elements.maxFileSize.addEventListener('change', updateAdvancedSummary);
+    }
+
+    // Load current server settings
+    loadServerSettings();
 }
 
 /**
@@ -2761,6 +2778,101 @@ async function checkSpeakerDetectionStatus() {
         }
     } catch (e) {
         console.warn('Failed to check speaker detection status:', e);
+    }
+}
+
+// ============================================================================
+// Advanced Settings Functions
+// ============================================================================
+
+/**
+ * Load current server settings and apply to UI.
+ */
+async function loadServerSettings() {
+    try {
+        const response = await fetch('/api/settings/transcription');
+        if (response.ok) {
+            const settings = await response.json();
+            if (elements.maxFileSize && settings.max_memory_mb) {
+                elements.maxFileSize.value = settings.max_memory_mb;
+                updateAdvancedSummary();
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to load server settings:', e);
+    }
+}
+
+/**
+ * Save advanced settings to server.
+ */
+async function saveAdvancedSettings() {
+    const btn = elements.saveAdvancedSettings;
+    const status = elements.settingsStatus;
+
+    if (!elements.maxFileSize) return;
+
+    const maxFileSize = parseInt(elements.maxFileSize.value, 10);
+    if (isNaN(maxFileSize) || maxFileSize < 100 || maxFileSize > 10000) {
+        showSettingsStatus('Invalid value (100-10000 MB)', 'error');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    status.textContent = '';
+    status.className = 'settings-status';
+
+    try {
+        const formData = new FormData();
+        formData.append('max_file_size_mb', maxFileSize);
+
+        const response = await fetch('/api/settings/transcription', {
+            method: 'PUT',
+            body: formData
+        });
+
+        if (response.ok) {
+            showSettingsStatus('Saved!', 'success');
+            updateAdvancedSummary();
+        } else {
+            const error = await response.json();
+            showSettingsStatus(error.detail || 'Failed to save', 'error');
+        }
+    } catch (e) {
+        console.error('Failed to save settings:', e);
+        showSettingsStatus('Failed to save', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Settings';
+    }
+}
+
+/**
+ * Show status message for settings.
+ * @param {string} message - Status message
+ * @param {string} type - 'success' or 'error'
+ */
+function showSettingsStatus(message, type) {
+    const status = elements.settingsStatus;
+    if (!status) return;
+
+    status.textContent = message;
+    status.className = `settings-status ${type}`;
+
+    // Clear after 3 seconds
+    setTimeout(() => {
+        status.textContent = '';
+        status.className = 'settings-status';
+    }, 3000);
+}
+
+/**
+ * Update advanced settings accordion summary.
+ */
+function updateAdvancedSummary() {
+    if (elements.advancedSummary && elements.maxFileSize) {
+        elements.advancedSummary.textContent = `Max: ${elements.maxFileSize.value}MB`;
     }
 }
 

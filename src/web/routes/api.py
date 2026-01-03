@@ -1337,6 +1337,63 @@ async def update_ai_settings(
         raise HTTPException(status_code=500, detail=f"Failed to save settings: {str(e)}")
 
 
+@router.get("/settings/transcription")
+async def get_transcription_settings():
+    """Get current transcription settings."""
+    from config.settings import Settings
+
+    settings = Settings()
+    transcription_config = settings.config.get("transcription", {})
+
+    return {
+        "max_memory_mb": transcription_config.get("max_memory_mb", 1000),
+        "force_chunking": transcription_config.get("force_chunking", False),
+        "default_model": transcription_config.get("default_model", "base"),
+    }
+
+
+@router.put("/settings/transcription")
+async def update_transcription_settings(
+    max_file_size_mb: Optional[int] = Form(default=None),
+    force_chunking: Optional[bool] = Form(default=None),
+    default_model: Optional[str] = Form(default=None),
+):
+    """Update transcription settings."""
+    from config.settings import Settings
+
+    settings = Settings()
+
+    # Ensure transcription section exists
+    if "transcription" not in settings.config:
+        settings.config["transcription"] = {}
+
+    transcription_config = settings.config["transcription"]
+
+    # Update max file size
+    if max_file_size_mb is not None:
+        transcription_config["max_memory_mb"] = max_file_size_mb
+
+    # Update force chunking
+    if force_chunking is not None:
+        transcription_config["force_chunking"] = force_chunking
+
+    # Update default model
+    if default_model is not None:
+        transcription_config["default_model"] = default_model
+
+    try:
+        settings.save_user_config()
+
+        return {
+            "success": True,
+            "message": "Transcription settings updated",
+            "config_file": settings.config_file_path,
+            "transcription": transcription_config,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save settings: {str(e)}")
+
+
 def _update_env_file(env_vars: dict):
     """Helper to update .env file with new values."""
     from pathlib import Path

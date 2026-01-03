@@ -136,6 +136,28 @@
                 </div>
             </div>
         </div>
+
+        <!-- Advanced Settings Panel -->
+        <div class="accordion-panel" data-panel="advanced">
+            <button class="accordion-header" type="button">
+                <span class="accordion-title">Advanced Settings</span>
+                <span class="accordion-summary" id="advanced-summary">Max: 1000MB</span>
+                <span class="accordion-icon">&#9662;</span>
+            </button>
+            <div class="accordion-content">
+                <div class="accordion-grid">
+                    <div class="setting-group">
+                        <label for="max-file-size">Max File Size (MB)</label>
+                        <input type="number" id="max-file-size" min="100" max="10000" step="100" value="1000">
+                        <span class="setting-hint">Maximum file size for uploads (100-10000 MB)</span>
+                    </div>
+                </div>
+                <div class="settings-actions">
+                    <button type="button" class="save-settings-btn" id="save-advanced-settings">Save Settings</button>
+                    <span class="settings-status" id="settings-status"></span>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Upload Mode -->

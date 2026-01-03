@@ -578,6 +578,81 @@ body::before {
     box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 
+/* Number inputs in setting groups */
+.setting-group input[type="number"] {
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    font-family: var(--font-body);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: all var(--duration-fast) var(--ease-out);
+    width: 100%;
+}
+
+.setting-group input[type="number"]:hover {
+    border-color: var(--border-strong);
+}
+
+.setting-group input[type="number"]:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.setting-hint {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    margin-top: calc(var(--space-xs) * -1);
+}
+
+/* Settings Actions */
+.settings-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--border);
+}
+
+.save-settings-btn {
+    padding: var(--space-sm) var(--space-lg);
+    background: var(--gradient-accent);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-out);
+}
+
+.save-settings-btn:hover {
+    background: var(--gradient-accent-hover);
+    transform: translateY(-1px);
+}
+
+.save-settings-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.settings-status {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.settings-status.success {
+    color: var(--success);
+}
+
+.settings-status.error {
+    color: var(--error);
+}
+
 /* ============================================
    Searchable Select Component
    ============================================ */
