@@ -1113,6 +1113,16 @@ body::before {
     flex-direction: column;
     align-items: center;
     padding: var(--space-2xl);
+    gap: var(--space-lg);
+}
+
+.recording-controls-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-md);
+    flex-wrap: wrap;
 }
 
 .record-btn {
@@ -1207,7 +1217,6 @@ body::before {
     text-transform: uppercase;
     letter-spacing: 0.05em;
     transition: all var(--duration-fast) var(--ease-out);
-    margin-left: var(--space-lg);
 }
 
 .pause-btn:hover {
@@ -1266,7 +1275,6 @@ body::before {
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    margin-left: var(--space-sm);
 }
 
 .chapter-btn:hover {

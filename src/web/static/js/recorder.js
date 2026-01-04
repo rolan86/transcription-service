@@ -146,10 +146,8 @@ function pauseRecording() {
     isPaused = true;
     pauseStartTime = Date.now();
 
-    // Disconnect script processor to stop sending audio
-    if (scriptProcessor) {
-        scriptProcessor.onaudioprocess = null;
-    }
+    // Note: We keep the scriptProcessor callback active but check isPaused inside it
+    // This keeps the audio pipeline intact and prevents resume issues
 
     // Pause MediaRecorder
     if (mediaRecorder.state === 'recording') {
@@ -187,18 +185,7 @@ function resumeRecording() {
         pauseStartTime = null;
     }
 
-    // Reconnect script processor
-    if (scriptProcessor) {
-        scriptProcessor.onaudioprocess = (event) => {
-            if (wsClient && wsClient.isConnected) {
-                const inputData = event.inputBuffer.getChannelData(0);
-                const pcmData = float32ToInt16(inputData);
-                pcmChunks.push(new Int16Array(pcmData));
-                const base64 = arrayBufferToBase64(pcmData.buffer);
-                wsClient.send({ type: 'audio', data: base64 });
-            }
-        };
-    }
+    // Note: scriptProcessor callback stays active, isPaused flag controls data flow
 
     // Resume MediaRecorder
     if (mediaRecorder.state === 'paused') {
@@ -407,6 +394,11 @@ async function continueRecording() {
 
                 // Connect script processor
                 scriptProcessor.onaudioprocess = (event) => {
+                    // Skip processing when paused - keeps audio pipeline intact
+                    if (isPaused) {
+                        return;
+                    }
+
                     if (wsClient && wsClient.isConnected) {
                         const inputData = event.inputBuffer.getChannelData(0);
                         const pcmData = float32ToInt16(inputData);
@@ -427,11 +419,10 @@ async function continueRecording() {
                 // Update UI
                 recorderElements.recordBtn.classList.add('recording');
                 recorderElements.recordText.textContent = 'Stop';
-                if (recorderElements.pauseBtn) {
-                    recorderElements.pauseBtn.hidden = false;
-                }
-                if (recorderElements.chapterBtn) {
-                    recorderElements.chapterBtn.hidden = false;
+                // Show recording controls row
+                const controlsRow = document.getElementById('recording-controls-row');
+                if (controlsRow) {
+                    controlsRow.hidden = false;
                 }
                 showLiveTranscript();
                 visualizeAudioLevel();
@@ -592,6 +583,11 @@ async function startRecording() {
 
         // Process audio data for streaming
         scriptProcessor.onaudioprocess = (event) => {
+            // Skip processing when paused - keeps audio pipeline intact
+            if (isPaused) {
+                return;
+            }
+
             if (wsClient && wsClient.isConnected) {
                 const inputData = event.inputBuffer.getChannelData(0);
 
@@ -640,11 +636,10 @@ async function startRecording() {
         // Update UI
         recorderElements.recordBtn.classList.add('recording');
         recorderElements.recordText.textContent = 'Stop';
-        if (recorderElements.pauseBtn) {
-            recorderElements.pauseBtn.hidden = false;
-        }
-        if (recorderElements.chapterBtn) {
-            recorderElements.chapterBtn.hidden = false;
+        // Show recording controls row
+        const controlsRowStart = document.getElementById('recording-controls-row');
+        if (controlsRowStart) {
+            controlsRowStart.hidden = false;
         }
         showLiveTranscript();
 
@@ -714,12 +709,13 @@ async function stopRecording() {
     recorderElements.recordBtn.classList.remove('paused');
     recorderElements.recordText.textContent = 'Start Recording';
     recorderElements.levelBar.style.width = '0%';
-    if (recorderElements.pauseBtn) {
-        recorderElements.pauseBtn.hidden = true;
-        recorderElements.pauseBtn.classList.remove('paused');
+    // Hide recording controls row
+    const controlsRowStop = document.getElementById('recording-controls-row');
+    if (controlsRowStop) {
+        controlsRowStop.hidden = true;
     }
-    if (recorderElements.chapterBtn) {
-        recorderElements.chapterBtn.hidden = true;
+    if (recorderElements.pauseBtn) {
+        recorderElements.pauseBtn.classList.remove('paused');
     }
 
     // Close final chapter if exists
@@ -1101,6 +1097,11 @@ async function startScreenModeRecording() {
 
         // Process audio data for streaming
         scriptProcessor.onaudioprocess = (event) => {
+            // Skip processing when paused - keeps audio pipeline intact
+            if (isPaused) {
+                return;
+            }
+
             if (wsClient && wsClient.isConnected) {
                 const inputData = event.inputBuffer.getChannelData(0);
 
@@ -1153,11 +1154,10 @@ async function startScreenModeRecording() {
         // Update UI
         recorderElements.recordBtn.classList.add('recording');
         recorderElements.recordText.textContent = 'Stop';
-        if (recorderElements.pauseBtn) {
-            recorderElements.pauseBtn.hidden = false;
-        }
-        if (recorderElements.chapterBtn) {
-            recorderElements.chapterBtn.hidden = false;
+        // Show recording controls row
+        const controlsRowStart = document.getElementById('recording-controls-row');
+        if (controlsRowStart) {
+            controlsRowStart.hidden = false;
         }
         showLiveTranscript();
 

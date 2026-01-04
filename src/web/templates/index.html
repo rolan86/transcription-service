@@ -262,14 +262,17 @@
                 <span class="record-icon"></span>
                 <span class="record-text">Start Recording</span>
             </button>
-            <button class="pause-btn" id="pause-btn" hidden title="Pause Recording">
-                <span class="pause-icon">&#10074;&#10074;</span>
-                <span class="pause-text">Pause</span>
-            </button>
-            <button class="chapter-btn" id="chapter-btn" hidden title="Add Chapter Marker">
-                <span class="chapter-icon">&#128278;</span>
-                <span class="chapter-text">Add Chapter</span>
-            </button>
+            <!-- Recording controls row - shown when recording is active -->
+            <div class="recording-controls-row" id="recording-controls-row" hidden>
+                <button class="pause-btn" id="pause-btn" title="Pause Recording">
+                    <span class="pause-icon">&#10074;&#10074;</span>
+                    <span class="pause-text">Pause</span>
+                </button>
+                <button class="chapter-btn" id="chapter-btn" title="Add Chapter Marker">
+                    <span class="chapter-icon">&#128278;</span>
+                    <span class="chapter-text">Add Chapter</span>
+                </button>
+            </div>
             <div class="record-timer" id="record-timer">00:00</div>
         </div>
         <div class="audio-level" id="audio-level">
