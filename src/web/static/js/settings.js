@@ -518,8 +518,13 @@ async function updateWhisperStatus() {
             const data = await response.json();
 
             if (data.model_ready) {
+                // Whisper is available (library installed)
                 statusDot.className = 'status-dot available';
-                statusText.textContent = `Whisper: Ready (${data.model_size || 'base'})`;
+                if (data.model_loaded) {
+                    statusText.textContent = `Whisper: Ready (${data.model_size || 'base'})`;
+                } else {
+                    statusText.textContent = 'Whisper: Available';
+                }
             } else if (data.status === 'loading') {
                 statusDot.className = 'status-dot checking';
                 statusText.textContent = 'Whisper: Loading...';
@@ -528,8 +533,8 @@ async function updateWhisperStatus() {
                 statusText.textContent = 'Whisper: Error';
                 statusDot.title = data.error || 'Model loading failed';
             } else {
-                statusDot.className = 'status-dot';
-                statusText.textContent = 'Whisper: Not loaded';
+                statusDot.className = 'status-dot unavailable';
+                statusText.textContent = 'Whisper: Not installed';
             }
         } else {
             throw new Error('Failed to fetch status');

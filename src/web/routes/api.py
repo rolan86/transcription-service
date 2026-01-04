@@ -42,13 +42,24 @@ async def health_check():
 
 @router.get("/whisper/status")
 async def get_whisper_status():
-    """Get Whisper model loading status."""
+    """Get Whisper model loading status and availability."""
     from poc.transcription_engine import TranscriptionEngine
 
+    # Check if whisper library is available
+    whisper_available = False
+    try:
+        import whisper
+        whisper_available = True
+    except ImportError:
+        pass
+
     status = TranscriptionEngine.get_model_status()
+    model_loaded = status['status'] == 'ready'
+
     return {
-        "model_ready": status['status'] == 'ready',
-        "status": status['status'],
+        "model_ready": whisper_available,  # Whisper is available/can be used
+        "model_loaded": model_loaded,  # A model is actively loaded in memory
+        "status": "available" if whisper_available else status['status'],
         "error": status['error'],
         "model_size": status['model_size'],
     }
