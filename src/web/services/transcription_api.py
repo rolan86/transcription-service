@@ -126,6 +126,9 @@ class TranscriptionAPI:
         """
         Save uploaded file content to a temporary file.
 
+        DEPRECATED: Use save_upload_file_streaming() instead to avoid OOM.
+        This method loads the entire file into memory.
+
         Args:
             file_content: Raw file bytes
             filename: Original filename
@@ -144,6 +147,67 @@ class TranscriptionAPI:
             os.close(fd)
 
         return temp_path
+
+    async def save_upload_file_streaming(
+        self, upload_file: "UploadFile", filename: str, max_size_mb: int = 10240
+    ) -> str:
+        """
+        Stream uploaded file directly to disk without loading into memory.
+
+        Args:
+            upload_file: FastAPI UploadFile object
+            filename: Original filename
+            max_size_mb: Maximum file size in MB (default 10GB)
+
+        Returns:
+            Path to the saved temporary file
+
+        Raises:
+            HTTPException: If file exceeds max_size_mb
+        """
+        import aiofiles
+
+        # Get file extension
+        ext = Path(filename).suffix.lower()
+
+        # Create temp file with correct extension
+        fd, temp_path = tempfile.mkstemp(suffix=ext)
+        os.close(fd)
+
+        max_bytes = max_size_mb * 1024 * 1024
+        bytes_written = 0
+
+        try:
+            # Stream upload to disk in chunks
+            async with aiofiles.open(temp_path, "wb") as f:
+                while chunk := await upload_file.read(1024 * 1024):  # 1MB chunks
+                    bytes_written += len(chunk)
+
+                    # Check size limit during streaming
+                    if bytes_written > max_bytes:
+                        await upload_file.close()
+                        try:
+                            os.unlink(temp_path)
+                        except Exception:
+                            pass
+                        from fastapi import HTTPException
+
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"File too large: {bytes_written / (1024*1024):.1f}MB. Max: {max_size_mb}MB",
+                        )
+
+                    await f.write(chunk)
+
+            return temp_path
+
+        except Exception as e:
+            # Clean up temp file on error
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+            raise
 
     def cleanup_temp_file(self, file_path: str) -> None:
         """Clean up a temporary file."""

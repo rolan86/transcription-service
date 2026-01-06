@@ -139,9 +139,8 @@ async def transcribe_file(
             detail=f"Unsupported file format: {ext}. Supported: {all_formats}",
         )
 
-    # Read and save uploaded file
-    file_content = await file.read()
-    temp_path = await api.save_upload_file(file_content, filename)
+    # Stream uploaded file directly to disk (prevents OOM on large files)
+    temp_path = await api.save_upload_file_streaming(file, filename)
 
     # Create transcription settings
     settings = {
@@ -163,12 +162,18 @@ async def transcribe_file(
             settings=settings,
         )
 
+        # Filter out display-only options that transcribe_file doesn't accept
+        transcribe_settings = {
+            k: v for k, v in settings.items()
+            if k not in ("show_timestamps",)
+        }
+
         # Define transcription function
         async def transcribe():
             try:
                 result = await api.transcribe_file(
                     file_path=temp_path,
-                    **settings,
+                    **transcribe_settings,
                 )
                 return result
             finally:
@@ -191,9 +196,15 @@ async def transcribe_file(
     else:
         # Synchronous mode - wait for result
         try:
+            # Filter out display-only options that transcribe_file doesn't accept
+            transcribe_settings = {
+                k: v for k, v in settings.items()
+                if k not in ("show_timestamps",)
+            }
+
             result = await api.transcribe_file(
                 file_path=temp_path,
-                **settings,
+                **transcribe_settings,
             )
 
             if not result.get("success"):
