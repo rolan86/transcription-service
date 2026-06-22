@@ -494,3 +494,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **Made with ❤️ for the transcription community**
+
+## Author
+
+Built by [Merryl D'Mello](https://reposition.dev). I build self-hosted, privacy-first AI tooling and write about AI workflows at [REPOSITION](https://reposition.dev). This transcription service runs part of REPOSITION's own content pipeline.
