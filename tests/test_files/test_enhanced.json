@@ -4,11 +4,11 @@
     "generated_at": "2025-07-26T20:49:20.305153",
     "generation_timestamp": 1753555760.3051882,
     "input_file": {
-      "path": "/Users/merryldmello/Desktop/Projects/transcription-service/tests/test_files/test_audio.wav",
+      "path": "/Users/merryldmello/Projects/transcription-service/tests/test_files/test_audio.wav",
       "name": "test_audio.wav",
       "stem": "test_audio",
       "extension": ".wav",
-      "directory": "/Users/merryldmello/Desktop/Projects/transcription-service/tests/test_files",
+      "directory": "/Users/merryldmello/Projects/transcription-service/tests/test_files",
       "size_bytes": 96044,
       "size_mb": 0.09,
       "size_human": "93.8 KB",
