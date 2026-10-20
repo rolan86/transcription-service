@@ -783,6 +783,22 @@ async def translate_text(
 # AI Features Endpoints
 # ============================================================================
 
+def _resolve_or_http_error(ai_config, requested):
+    """Resolve the AI provider with no cloud fallback; map failures to clear HTTP errors."""
+    from ..services.ai_provider import (
+        AIProviderFactory, CloudNotAllowedError, OllamaUnavailableError, ProviderError,
+    )
+    try:
+        provider, provider_type, _is_local = AIProviderFactory.resolve(ai_config, requested or None)
+        return provider, provider_type
+    except CloudNotAllowedError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except OllamaUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ProviderError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/ai/providers")
 async def get_ai_providers():
     """Get available AI providers and their status."""
@@ -794,6 +810,8 @@ async def get_ai_providers():
 
     available = AIProviderFactory.get_available_providers(ai_config)
     current_provider = ai_config.get("provider", "ollama")
+    from ..services.ai_provider import cloud_allowed, CLOUD_PROVIDERS
+    allow_cloud = cloud_allowed(ai_config)
 
     # Get Ollama models if available
     ollama_models = []
@@ -802,7 +820,9 @@ async def get_ai_providers():
 
     return {
         "available_providers": available,
-        "current_provider": current_provider if current_provider in available else (available[0] if available else None),
+        "current_provider": current_provider,
+        "current_is_local": current_provider not in CLOUD_PROVIDERS,
+        "allow_cloud": allow_cloud,
         "providers": {
             "zai": {
                 "name": "z.ai",
@@ -849,24 +869,10 @@ async def cleanup_transcript(
     settings = Settings()
     ai_config = settings.config.get("ai", {})
 
-    # Determine which provider to use
-    available = AIProviderFactory.get_available_providers(ai_config)
-    if not available:
-        raise HTTPException(
-            status_code=503,
-            detail="No AI providers available. Configure API keys or local model path.",
-        )
-
-    # Use specified provider or fall back to configured default
-    provider_type = provider or ai_config.get("provider", "claude")
-    if provider_type not in available:
-        # Fall back to first available
-        provider_type = available[0]
+    # No fallback: the chosen provider is used or the request fails clearly
+    ai_provider, provider_type = _resolve_or_http_error(ai_config, provider)
 
     try:
-        # Create provider and service
-        provider_config = ai_config.get(provider_type, {})
-        ai_provider = AIProviderFactory.create(provider_type, provider_config)
         cleanup_service = CleanupService(ai_provider)
 
         # Run cleanup
@@ -902,21 +908,9 @@ async def cleanup_transcript_with_diff(
     settings = Settings()
     ai_config = settings.config.get("ai", {})
 
-    # Determine which provider to use
-    available = AIProviderFactory.get_available_providers(ai_config)
-    if not available:
-        raise HTTPException(
-            status_code=503,
-            detail="No AI providers available. Configure API keys or local model path.",
-        )
-
-    provider_type = provider or ai_config.get("provider", "claude")
-    if provider_type not in available:
-        provider_type = available[0]
+    ai_provider, provider_type = _resolve_or_http_error(ai_config, provider)
 
     try:
-        provider_config = ai_config.get(provider_type, {})
-        ai_provider = AIProviderFactory.create(provider_type, provider_config)
         cleanup_service = CleanupService(ai_provider)
 
         result = await cleanup_service.cleanup_with_diff(transcript)
@@ -948,19 +942,8 @@ def _get_ai_provider_for_extraction(provider: Optional[str] = None):
     settings = Settings()
     ai_config = settings.config.get("ai", {})
 
-    available = AIProviderFactory.get_available_providers(ai_config)
-    if not available:
-        raise HTTPException(
-            status_code=503,
-            detail="No AI providers available. Configure API keys or local model path.",
-        )
-
-    provider_type = provider or ai_config.get("provider", "claude")
-    if provider_type not in available:
-        provider_type = available[0]
-
-    provider_config = ai_config.get(provider_type, {})
-    return AIProviderFactory.create(provider_type, provider_config), provider_type
+    ai_provider, provider_type = _resolve_or_http_error(ai_config, provider)
+    return ai_provider, provider_type
 
 
 @router.post("/ai/extract/summary")
@@ -1347,6 +1330,7 @@ async def get_settings():
     return {
         "ai": {
             "provider": ai_config.get("provider", "ollama"),
+            "allow_cloud": ai_config.get("allow_cloud", False) is True,
             "available_providers": available_providers,
             "zai": {
                 "configured": bool(ai_config.get("zai", {}).get("api_key")),
@@ -1380,6 +1364,7 @@ async def get_settings():
 @router.put("/settings/ai")
 async def update_ai_settings(
     provider: Optional[str] = Form(default=None),
+    allow_cloud: Optional[bool] = Form(default=None),
     zai_api_key: Optional[str] = Form(default=None),
     zai_model: Optional[str] = Form(default=None),
     zai_base_url: Optional[str] = Form(default=None),
@@ -1404,6 +1389,8 @@ async def update_ai_settings(
     # Update provider
     if provider:
         ai_config["provider"] = provider
+    if allow_cloud is not None:
+        ai_config["allow_cloud"] = allow_cloud
 
     # Update z.ai settings
     if "zai" not in ai_config:
@@ -1452,6 +1439,7 @@ async def update_ai_settings(
             "OLLAMA_BASE_URL": ai_config.get("ollama", {}).get("base_url"),
             "LLAMA_MODEL_PATH": ai_config.get("llama", {}).get("model_path"),
             "AI_PROVIDER": ai_config.get("provider"),
+            "AI_ALLOW_CLOUD": str(ai_config.get("allow_cloud", False)).lower(),
         })
 
         return {

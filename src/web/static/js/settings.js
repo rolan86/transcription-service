@@ -139,6 +139,10 @@ function populateSettings(settings) {
     if (aiProvider) {
         aiProvider.value = provider;
     }
+    const allowCloud = document.getElementById('ai-allow-cloud');
+    if (allowCloud) {
+        allowCloud.checked = ai.allow_cloud === true;
+    }
     showProviderSettings(provider);
 
     // Populate Ollama models
@@ -325,6 +329,10 @@ async function saveAISettings() {
         // Add provider
         if (aiProvider?.value) {
             formData.append('provider', aiProvider.value);
+        }
+        const allowCloudBox = document.getElementById('ai-allow-cloud');
+        if (allowCloudBox) {
+            formData.append('allow_cloud', allowCloudBox.checked ? 'true' : 'false');
         }
 
         // Add Ollama settings

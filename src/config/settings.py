@@ -72,7 +72,8 @@ class Settings:
             'enhanced_metadata_content_analysis': True
         },
         'ai': {
-            'provider': 'ollama',  # 'zai', 'claude', 'ollama', or 'llama'
+            'provider': 'ollama',  # Local by default. 'zai'/'claude' also need allow_cloud
+            'allow_cloud': False,  # Must be true before any cloud provider is used
             'zai': {
                 'api_key': None,  # Set via env: ZAI_API_KEY
                 'base_url': 'https://api.z.ai/api/paas/v4/',
@@ -188,6 +189,7 @@ class Settings:
 
             # AI provider settings
             'AI_PROVIDER': ('ai', 'provider'),
+            'AI_ALLOW_CLOUD': ('ai', 'allow_cloud'),
         }
 
         # Handle nested AI provider settings
@@ -222,7 +224,7 @@ class Settings:
                         continue
                 elif key in ['parallel_chunks', 'include_metadata', 'cleanup_temp_files', 
                            'progress_reporting', 'verbose_progress', 'force_chunking',
-                           'include_timestamps', 'no_progress']:
+                           'include_timestamps', 'no_progress', 'allow_cloud']:
                     value = value.lower() in ('true', '1', 'yes', 'on')
                 
                 self.config[section][key] = value

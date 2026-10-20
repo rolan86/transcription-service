@@ -11,6 +11,41 @@ from typing import Optional, Dict, Any, List
 from concurrent.futures import ThreadPoolExecutor
 
 
+CLOUD_PROVIDERS = ("zai", "claude")
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+DEFAULT_OLLAMA_URL = "http://localhost:11434"
+
+
+class ProviderError(Exception):
+    """Base error for provider selection problems. Message is user-facing."""
+
+
+class CloudNotAllowedError(ProviderError):
+    """A cloud provider was requested without explicit opt-in."""
+
+
+class OllamaUnavailableError(ProviderError):
+    """Local Ollama is not running or the model is missing."""
+
+
+def is_local_url(url: Optional[str]) -> bool:
+    """True only for http(s) URLs whose host is localhost, 127.0.0.1 or ::1."""
+    from urllib.parse import urlparse
+    try:
+        host = urlparse(url or "").hostname
+    except ValueError:
+        return False
+    return host in LOCAL_HOSTS
+
+
+def cloud_allowed(config: Optional[Dict[str, Any]]) -> bool:
+    """Cloud providers need an explicit allow_cloud: true in the ai config."""
+    value = (config or {}).get("allow_cloud", False)
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes", "on")
+    return value is True
+
+
 class AIProvider(ABC):
     """Abstract base class for AI providers."""
 
@@ -183,6 +218,28 @@ class OllamaProvider(AIProvider):
             pass
         return False
 
+    def ensure_ready(self) -> None:
+        """Raise OllamaUnavailableError with a clear message if Ollama or the model is missing."""
+        try:
+            with httpx.Client(timeout=2.0) as client:
+                response = client.get(f"{self.base_url}/api/tags")
+                response.raise_for_status()
+                models = [m.get("name", "") for m in response.json().get("models", [])]
+        except Exception:
+            raise OllamaUnavailableError(
+                f"Ollama is not running at {self.base_url}. Start it with `ollama serve` "
+                f"and pull the model with `ollama pull {self.model}`. "
+                "Your transcript is saved; only the summary was skipped."
+            )
+        self._available_models = models
+        wanted = self.model
+        if not any(m == wanted or (":" not in wanted and m.split(":")[0] == wanted) for m in models):
+            raise OllamaUnavailableError(
+                f"Ollama is running at {self.base_url} but model '{self.model}' is not installed. "
+                f"Pull it with `ollama pull {self.model}`. "
+                "Your transcript is saved; only the summary was skipped."
+            )
+
     def get_available_models(self) -> List[str]:
         """Get list of available Ollama models."""
         if self._available_models is None:
@@ -198,14 +255,21 @@ class OllamaProvider(AIProvider):
         if system:
             payload["system"] = system
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{self.base_url}/api/generate",
-                json=payload
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/api/generate",
+                    json=payload
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data.get("response", "")
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            raise OllamaUnavailableError(
+                f"Ollama is not running at {self.base_url}. Start it with `ollama serve` "
+                f"and pull the model with `ollama pull {self.model}`. "
+                "Your transcript is saved; only the summary was skipped."
             )
-            response.raise_for_status()
-            data = response.json()
-            return data.get("response", "")
 
 
 class AIProviderFactory:
@@ -265,17 +329,8 @@ class AIProviderFactory:
         """
         available = []
 
-        # Check z.ai
-        zai_config = config.get("zai", {})
-        if zai_config.get("api_key") or os.getenv("ZAI_API_KEY"):
-            available.append("zai")
-
-        # Check Claude
-        claude_config = config.get("claude", {})
-        if claude_config.get("api_key") or os.getenv("ANTHROPIC_API_KEY"):
-            available.append("claude")
-
-        # Check Ollama (local server)
+        # Check Ollama (local server) first; local providers always lead the list
+        # Cloud providers are listed only after explicit opt-in (allow_cloud).
         ollama_config = config.get("ollama", {})
         ollama_provider = OllamaProvider(
             model=ollama_config.get("model", "llama3"),
@@ -290,7 +345,57 @@ class AIProviderFactory:
         if model_path and os.path.exists(model_path):
             available.append("llama")
 
+        if cloud_allowed(config):
+            zai_config = config.get("zai", {})
+            if zai_config.get("api_key") or os.getenv("ZAI_API_KEY"):
+                available.append("zai")
+            claude_config = config.get("claude", {})
+            if claude_config.get("api_key") or os.getenv("ANTHROPIC_API_KEY"):
+                available.append("claude")
+
         return available
+
+    @staticmethod
+    def create_default(requested: Optional[str] = None) -> AIProvider:
+        """Resolve a provider from saved settings (used by the MCP server). Same no-fallback rules."""
+        from config.settings import Settings
+        ai_config = Settings().config.get("ai", {})
+        return AIProviderFactory.resolve(ai_config, requested)[0]
+
+    @staticmethod
+    def resolve(config: Optional[Dict[str, Any]], requested: Optional[str] = None):
+        """
+        Pick the provider for a request. No fallback, ever.
+
+        Returns (provider, provider_type, is_local). Raises ProviderError
+        subclasses with user-facing messages. Cloud providers (zai, claude, or
+        any non-localhost endpoint) need ai.allow_cloud: true.
+        """
+        config = config or {}
+        provider_type = requested or config.get("provider") or "ollama"
+        provider_config = config.get(provider_type, {}) or {}
+
+        if provider_type == "ollama":
+            base_url = provider_config.get("base_url", DEFAULT_OLLAMA_URL)
+            is_local = is_local_url(base_url)
+        elif provider_type in CLOUD_PROVIDERS:
+            is_local = False
+        elif provider_type == "llama":
+            is_local = True
+        else:
+            raise ProviderError(f"Unknown provider: {provider_type}")
+
+        if not is_local and not cloud_allowed(config):
+            raise CloudNotAllowedError(
+                f"Provider '{provider_type}' sends your transcript to a cloud service and is disabled. "
+                "Local Ollama is the default. To opt in, set ai.allow_cloud: true "
+                "(or AI_ALLOW_CLOUD=true) and choose the provider explicitly."
+            )
+
+        provider = AIProviderFactory.create(provider_type, provider_config)
+        if provider_type == "ollama":
+            provider.ensure_ready()
+        return provider, provider_type, is_local
 
     @staticmethod
     def get_ollama_models() -> List[str]:

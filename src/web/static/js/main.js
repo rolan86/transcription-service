@@ -1659,7 +1659,9 @@ async function showCleanupModal() {
  */
 function populateProviderSelect(data) {
     const select = cleanupModalElements.providerSelect;
-    select.innerHTML = '<option value="">Auto (use default)</option>';
+    const cur = data.current_provider || 'ollama';
+    const curLocal = data.current_is_local !== false;
+    select.innerHTML = `<option value="">Default: ${cur} (${curLocal ? 'local, stays on this machine' : 'CLOUD'})</option>`;
 
     const providers = data.providers || {};
     const available = data.available_providers || [];
@@ -1669,7 +1671,10 @@ function populateProviderSelect(data) {
         option.value = key;
         option.textContent = info.name;
         option.disabled = !info.available;
-        if (!info.available) {
+        if (key === 'zai' || key === 'claude') {
+            option.textContent += data.allow_cloud ? ' (cloud)' : ' (cloud, disabled: enable "Allow cloud" in Settings)';
+        }
+        if (!info.available && !(key === 'zai' || key === 'claude')) {
             option.textContent += ' (not configured)';
         }
         select.appendChild(option);
@@ -1677,7 +1682,7 @@ function populateProviderSelect(data) {
 
     // Update status
     if (available.length > 0) {
-        cleanupModalElements.providerStatus.textContent = `${available.length} provider(s) available`;
+        cleanupModalElements.providerStatus.textContent = `Will use ${cur} (${curLocal ? 'local' : 'cloud'}) unless you pick another`;
         cleanupModalElements.providerStatus.className = 'provider-status success';
     } else {
         cleanupModalElements.providerStatus.innerHTML = 'No providers configured. <a href="#" class="settings-link" onclick="openSettings(); return false;">Open Settings</a>';

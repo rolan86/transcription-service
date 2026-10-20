@@ -65,6 +65,15 @@ A powerful, production-ready CLI tool for transcribing audio and video files to 
 - **Local Embeddings**: Privacy-preserving search using sentence-transformers
 - **Auto-Indexing**: New transcriptions are automatically indexed
 
+## Privacy: local by default
+
+Transcription runs locally with Whisper. Summaries and other AI features use local Ollama (`http://localhost:11434`) by default, so your text stays on your machine.
+
+- Cloud providers (z.ai, Claude, or any Ollama URL that is not localhost) are refused unless you opt in. There is no automatic fallback from local to cloud.
+- If Ollama is not running, the summary step fails with a clear message (`ollama serve`, `ollama pull <model>`). Your transcript is still saved.
+- To opt in to a cloud provider, set both of these: `ai.allow_cloud: true` (in `~/.transcription/config.yaml`, or `AI_ALLOW_CLOUD=true`, or the "Allow cloud providers" checkbox in Settings) and pick the provider explicitly (`AI_PROVIDER=zai` or the Settings dropdown), plus its API key.
+- The web UI shows which provider will be used and whether it is local before you run a summary.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
